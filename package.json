@@ -1,0 +1,22 @@
+{
+  "name": "gestao-de-gasto",
+  "private": true,
+  "packageManager": "pnpm@11.23.0",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "dev": "docker compose up -d && concurrently -n api,web -c green,cyan \"pnpm dev:api\" \"pnpm dev:web\"",
+    "dev:api": "pnpm --filter api start:dev",
+    "dev:web": "pnpm --filter web dev",
+    "build": "pnpm -r build",
+    "build:web": "pnpm --filter @gestao/shared build && pnpm --filter web build",
+    "lint": "pnpm -r lint",
+    "prisma:migrate": "pnpm --filter api prisma migrate dev",
+    "prisma:seed": "pnpm --filter api prisma db seed",
+    "prisma:studio": "pnpm --filter api prisma studio"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2"
+  }
+}

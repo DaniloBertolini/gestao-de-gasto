@@ -1,0 +1,65 @@
+# Stack completa (banco + API + site) num comando só, pra testar em outra
+# máquina sem instalar Node/pnpm — só precisa do Docker Desktop.
+#
+#   docker compose -f docker-compose.full.yml up --build
+#
+# Depois abre http://localhost:8080 no navegador.
+#
+# Os segredos abaixo são fixos de propósito: essa stack roda só na máquina de
+# quem testar, nunca fica exposta na internet. Se algum dia isso for publicado
+# de verdade, troque tudo por variáveis de ambiente reais (ver README, seção
+# "Deploy em produção").
+
+name: patrimonio-full
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: gestao
+      POSTGRES_PASSWORD: gestao
+      POSTGRES_DB: gestao_de_gasto
+    ports:
+      - "5434:5432"
+    volumes:
+      - patrimonio_full_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U gestao"]
+      interval: 3s
+      timeout: 3s
+      retries: 10
+
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      DATABASE_URL: "postgresql://gestao:gestao@postgres:5432/gestao_de_gasto?schema=public"
+      DIRECT_URL: "postgresql://gestao:gestao@postgres:5432/gestao_de_gasto?schema=public"
+      JWT_ACCESS_SECRET: "chave-local-de-teste-nao-exposta-na-internet-32ch"
+      JWT_REFRESH_PEPPER: "outra-chave-local-de-teste-nao-exposta-32chars"
+      CORS_ORIGIN: "http://localhost:8080"
+    ports:
+      - "3000:3000"
+
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+      args:
+        VITE_API_URL: "http://localhost:3000/api/v1"
+    restart: unless-stopped
+    depends_on:
+      - api
+    ports:
+      - "8080:80"
+
+volumes:
+  patrimonio_full_postgres_data:
