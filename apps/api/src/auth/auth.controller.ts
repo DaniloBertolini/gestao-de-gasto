@@ -68,10 +68,15 @@ export class AuthController {
   }
 
   private setRefreshCookie(reply: FastifyReply, token: string) {
+    const isProduction = this.configService.get("NODE_ENV", { infer: true }) === "production";
     reply.setCookie(REFRESH_COOKIE_NAME, token, {
       httpOnly: true,
-      secure: this.configService.get("NODE_ENV", { infer: true }) === "production",
-      sameSite: "lax",
+      secure: isProduction,
+      // "none" é obrigatório em produção porque front (Cloudflare Pages) e API
+      // (Render) ficam em domínios diferentes — SameSite=Lax bloquearia o
+      // cookie nessas requisições cross-site. Exige secure=true, por isso só
+      // em produção; localhost usa "lax" (front e API são portas do mesmo host).
+      sameSite: isProduction ? "none" : "lax",
       path: REFRESH_COOKIE_PATH,
       maxAge: REFRESH_COOKIE_MAX_AGE_SECONDS,
     });
