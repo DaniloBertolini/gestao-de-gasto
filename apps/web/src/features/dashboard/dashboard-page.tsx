@@ -8,7 +8,7 @@ import { useAuth } from "@/features/auth/auth-context";
 import { useAccounts } from "@/features/accounts/use-accounts";
 import { useTransactions } from "@/features/transactions/use-transactions";
 import { useCountUp } from "@/hooks/use-count-up";
-import { cn, transactionLabel } from "@/lib/utils";
+import { cn, formatDate, transactionLabel } from "@/lib/utils";
 import { useMonthlySeries, useReportByCategory, useReportSummary } from "./use-reports";
 
 const today = new Date();
@@ -112,7 +112,7 @@ export function DashboardPage() {
                 <div>
                   <p className="text-sm font-medium text-foreground">{transactionLabel(tx)}</p>
                   <p className="text-xs text-muted-foreground">
-                    {tx.category?.name ?? "Sem categoria"} · {format(new Date(tx.date), "dd/MM")}
+                    {tx.category?.name ?? "Sem categoria"} · {formatDate(tx.date, "dd/MM")}
                   </p>
                 </div>
                 <span

@@ -12,7 +12,7 @@ import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
 import { MoneyInput } from "@/components/money-input";
 import { useAccounts } from "@/features/accounts/use-accounts";
-import { cn, transactionLabel } from "@/lib/utils";
+import { cn, formatDate, transactionLabel } from "@/lib/utils";
 import type { Transaction } from "@/types/domain";
 import { TransactionForm } from "./transaction-form";
 import { useCreateTransfer, useDeleteTransaction, useTransactions } from "./use-transactions";
@@ -88,7 +88,7 @@ export function TransactionsPage() {
         {Object.entries(grouped).map(([date, txs], i) => (
           <div key={date} className="animate-reveal" style={{ animationDelay: `${Math.min(i, 6) * 40}ms` }}>
             <p className="mb-2 text-xs font-semibold uppercase tracking-widest text-muted-foreground">
-              {format(new Date(date), "dd 'de' MMMM")}
+              {formatDate(date, "dd 'de' MMMM")}
             </p>
             <div className="divide-y divide-line rounded-lg border border-line-strong bg-card shadow-[3px_3px_0_hsl(var(--ink)/0.06)]">
               {txs.map((tx) => (

@@ -1,7 +1,6 @@
 import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { format } from "date-fns";
 import { CreditCard, Pencil, Plus, Trash2 } from "lucide-react";
 import { createAccountSchema, formatBRL, type CreateAccountInput } from "@gestao/shared";
 import { Button } from "@/components/ui/button";
@@ -11,7 +10,7 @@ import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
-import { cn, transactionLabel } from "@/lib/utils";
+import { cn, formatDate, transactionLabel } from "@/lib/utils";
 import type { Account } from "@/types/domain";
 import {
   useAccountInvoice,
@@ -182,12 +181,12 @@ function InvoiceView({ account, onPaid }: { account: Account; onPaid: () => void
         <div>
           <p className="text-xs uppercase tracking-wider text-muted-foreground">Período</p>
           <p className="font-medium text-foreground">
-            {format(new Date(invoice.periodStart), "dd/MM")} – {format(new Date(invoice.periodEnd), "dd/MM")}
+            {formatDate(invoice.periodStart, "dd/MM")} – {formatDate(invoice.periodEnd, "dd/MM")}
           </p>
         </div>
         <div className="text-right">
           <p className="text-xs uppercase tracking-wider text-muted-foreground">Vencimento</p>
-          <p className="font-medium text-foreground">{format(new Date(invoice.dueDate), "dd/MM")}</p>
+          <p className="font-medium text-foreground">{formatDate(invoice.dueDate, "dd/MM")}</p>
         </div>
       </div>
 
@@ -203,7 +202,7 @@ function InvoiceView({ account, onPaid }: { account: Account; onPaid: () => void
               <div>
                 <p className="text-foreground">{transactionLabel(tx)}</p>
                 <p className="text-xs text-muted-foreground">
-                  {tx.category?.name ?? "Sem categoria"} · {format(new Date(tx.date), "dd/MM")}
+                  {tx.category?.name ?? "Sem categoria"} · {formatDate(tx.date, "dd/MM")}
                 </p>
               </div>
               <span className="font-mono text-sm tabular-nums text-expense">{formatBRL(tx.amount)}</span>
