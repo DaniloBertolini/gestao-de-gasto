@@ -26,6 +26,15 @@ export type CreateTransactionInput = z.infer<typeof createTransactionSchema>;
 export const updateTransactionSchema = createTransactionSchema.partial();
 export type UpdateTransactionInput = z.infer<typeof updateTransactionSchema>;
 
+export const createTransferSchema = z.object({
+  fromAccountId: z.string().cuid(),
+  toAccountId: z.string().cuid(),
+  amount: z.number().int().positive(),
+  date: z.string().date(),
+  description: z.string().max(140).optional(),
+});
+export type CreateTransferInput = z.infer<typeof createTransferSchema>;
+
 export const listTransactionsQuerySchema = z.object({
   from: z.string().date().optional(),
   to: z.string().date().optional(),

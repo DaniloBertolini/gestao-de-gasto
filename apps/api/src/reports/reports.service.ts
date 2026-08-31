@@ -40,9 +40,11 @@ export class ReportsService {
     // real (summary/monthlySeries/saldo de conta) continua olhando só paid=true.
     // isCardPayment=false exclui o lançamento único gerado ao pagar a fatura,
     // já que as compras que o compõem já entraram aqui individualmente.
+    // transferGroupId=null exclui transferências entre contas — não são
+    // receita/despesa de verdade, só dinheiro mudando de lugar.
     const grouped = await this.prisma.transaction.groupBy({
       by: ["categoryId"],
-      where: { userId, type, deletedAt: null, isCardPayment: false, date: { gte: start, lt: end } },
+      where: { userId, type, deletedAt: null, isCardPayment: false, transferGroupId: null, date: { gte: start, lt: end } },
       _sum: { amount: true },
     });
 
@@ -87,7 +89,7 @@ export class ReportsService {
   private async totalsFor(userId: string, start: Date, end: Date) {
     const grouped = await this.prisma.transaction.groupBy({
       by: ["type"],
-      where: { userId, paid: true, deletedAt: null, date: { gte: start, lt: end } },
+      where: { userId, paid: true, deletedAt: null, transferGroupId: null, date: { gte: start, lt: end } },
       _sum: { amount: true },
     });
 

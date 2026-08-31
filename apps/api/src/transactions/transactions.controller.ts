@@ -1,7 +1,7 @@
 import { Body, Controller, Delete, Get, Param, Patch, Post, Query } from "@nestjs/common";
 import { CurrentUser, type AuthenticatedUser } from "../common/decorators/current-user.decorator";
 import { TransactionsService } from "./transactions.service";
-import { CreateTransactionDto, ListTransactionsQueryDto, UpdateTransactionDto } from "./dto/transaction.dto";
+import { CreateTransactionDto, CreateTransferDto, ListTransactionsQueryDto, UpdateTransactionDto } from "./dto/transaction.dto";
 
 @Controller("transactions")
 export class TransactionsController {
@@ -10,6 +10,11 @@ export class TransactionsController {
   @Get()
   findAll(@CurrentUser() user: AuthenticatedUser, @Query() query: ListTransactionsQueryDto) {
     return this.transactionsService.findAll(user.id, query);
+  }
+
+  @Post("transfer")
+  createTransfer(@CurrentUser() user: AuthenticatedUser, @Body() dto: CreateTransferDto) {
+    return this.transactionsService.createTransfer(user.id, dto);
   }
 
   @Get(":id")

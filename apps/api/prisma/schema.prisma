@@ -128,6 +128,11 @@ model Transaction {
   settledInPayment   Transaction?  @relation("InvoiceSettlement", fields: [settledInPaymentId], references: [id])
   settledPurchases   Transaction[] @relation("InvoiceSettlement")
 
+  // Transferência entre contas: as duas pernas (saída/entrada) compartilham
+  // esse id. Não é "receita"/"despesa" de verdade, então fica fora dos
+  // relatórios por categoria e dos totais de receita/despesa.
+  transferGroupId String?
+
   user     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   account  Account?  @relation(fields: [accountId], references: [id])
   category Category? @relation(fields: [categoryId], references: [id])
@@ -136,4 +141,5 @@ model Transaction {
   @@index([userId, accountId, date])
   @@index([userId, categoryId, date])
   @@index([accountId, paid, settledInPaymentId])
+  @@index([transferGroupId])
 }

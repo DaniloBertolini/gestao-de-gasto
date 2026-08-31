@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import type { CreateTransactionInput, ListTransactionsQuery, UpdateTransactionInput } from "@gestao/shared";
+import type { CreateTransactionInput, CreateTransferInput, ListTransactionsQuery, UpdateTransactionInput } from "@gestao/shared";
 import { api } from "@/lib/api";
 import { qk } from "@/lib/query-keys";
 import type { PaginatedResult, Transaction } from "@/types/domain";
@@ -28,6 +28,18 @@ export function useUpdateTransaction() {
   return useMutation({
     mutationFn: ({ id, input }: { id: string; input: UpdateTransactionInput }) =>
       api.patch<Transaction>(`/transactions/${id}`, input),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["transactions"] });
+      queryClient.invalidateQueries({ queryKey: ["reports"] });
+      queryClient.invalidateQueries({ queryKey: ["accounts"] });
+    },
+  });
+}
+
+export function useCreateTransfer() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (input: CreateTransferInput) => api.post<Transaction[]>("/transactions/transfer", input),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["transactions"] });
       queryClient.invalidateQueries({ queryKey: ["reports"] });

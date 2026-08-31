@@ -36,6 +36,7 @@ export interface Transaction {
   installmentNo?: number | null;
   installmentTotal?: number | null;
   isCardPayment?: boolean;
+  transferGroupId?: string | null;
   account?: Account | null;
   category?: Category | null;
 }

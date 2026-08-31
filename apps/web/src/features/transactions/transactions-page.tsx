@@ -1,14 +1,21 @@
 import { useState } from "react";
+import { Controller, useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
 import { format } from "date-fns";
-import { Pencil, Plus, Trash2 } from "lucide-react";
-import { formatBRL } from "@gestao/shared";
+import { ArrowRightLeft, Pencil, Plus, Trash2 } from "lucide-react";
+import { createTransferSchema, formatBRL, type CreateTransferInput } from "@gestao/shared";
 import { Button } from "@/components/ui/button";
 import { useConfirm } from "@/components/confirm-provider";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Select } from "@/components/ui/select";
+import { MoneyInput } from "@/components/money-input";
+import { useAccounts } from "@/features/accounts/use-accounts";
 import { cn, transactionLabel } from "@/lib/utils";
 import type { Transaction } from "@/types/domain";
 import { TransactionForm } from "./transaction-form";
-import { useDeleteTransaction, useTransactions } from "./use-transactions";
+import { useCreateTransfer, useDeleteTransaction, useTransactions } from "./use-transactions";
 
 export function TransactionsPage() {
   const [page, setPage] = useState(1);
@@ -26,6 +33,7 @@ export function TransactionsPage() {
 
   const [formOpen, setFormOpen] = useState(false);
   const [editingTx, setEditingTx] = useState<Transaction | null>(null);
+  const [transferOpen, setTransferOpen] = useState(false);
 
   function openCreate() {
     setEditingTx(null);
@@ -46,14 +54,25 @@ export function TransactionsPage() {
           <p className="text-xs font-semibold uppercase tracking-[0.2em] text-accent">Registro</p>
           <h1 className="font-display text-3xl font-semibold text-foreground">Transações</h1>
         </div>
-        <Button size="sm" onClick={openCreate}>
-          <Plus className="h-4 w-4" /> Nova
-        </Button>
+        <div className="flex gap-2">
+          <Button size="sm" variant="outline" onClick={() => setTransferOpen(true)}>
+            <ArrowRightLeft className="h-4 w-4" /> Transferência
+          </Button>
+          <Button size="sm" onClick={openCreate}>
+            <Plus className="h-4 w-4" /> Nova
+          </Button>
+        </div>
       </div>
 
       <Dialog open={formOpen} onOpenChange={setFormOpen}>
         <DialogContent title={editingTx ? "Editar transação" : "Nova transação"}>
           <TransactionForm transaction={editingTx ?? undefined} onDone={() => setFormOpen(false)} />
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={transferOpen} onOpenChange={setTransferOpen}>
+        <DialogContent title="Transferência entre contas">
+          <TransferForm onDone={() => setTransferOpen(false)} />
         </DialogContent>
       </Dialog>
 
@@ -116,6 +135,84 @@ export function TransactionsPage() {
         </div>
       )}
     </div>
+  );
+}
+
+function TransferForm({ onDone }: { onDone: () => void }) {
+  const { data: accounts } = useAccounts();
+  const createTransfer = useCreateTransfer();
+  const {
+    register,
+    control,
+    handleSubmit,
+    formState: { errors, isSubmitting },
+  } = useForm<CreateTransferInput>({
+    resolver: zodResolver(createTransferSchema),
+    defaultValues: { date: format(new Date(), "yyyy-MM-dd"), amount: 0 },
+  });
+
+  async function onSubmit(data: CreateTransferInput) {
+    try {
+      await createTransfer.mutateAsync(data);
+      onDone();
+    } catch {
+      // toast de erro já é exibido globalmente (ver mutationCache em main.tsx)
+    }
+  }
+
+  return (
+    <form onSubmit={handleSubmit(onSubmit)} className="flex flex-col gap-4">
+      <div className="flex flex-col gap-1.5">
+        <Label>Valor</Label>
+        <Controller
+          control={control}
+          name="amount"
+          render={({ field }) => <MoneyInput value={field.value} onChange={field.onChange} autoFocus />}
+        />
+        {errors.amount && <span className="text-xs text-expense">Informe um valor válido</span>}
+      </div>
+
+      <div className="grid grid-cols-2 gap-4">
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor="fromAccountId">De</Label>
+          <Select id="fromAccountId" {...register("fromAccountId")}>
+            <option value="">Selecione...</option>
+            {accounts?.map((account) => (
+              <option key={account.id} value={account.id}>
+                {account.name}
+              </option>
+            ))}
+          </Select>
+          {errors.fromAccountId && <span className="text-xs text-expense">Selecione a conta de origem</span>}
+        </div>
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor="toAccountId">Para</Label>
+          <Select id="toAccountId" {...register("toAccountId")}>
+            <option value="">Selecione...</option>
+            {accounts?.map((account) => (
+              <option key={account.id} value={account.id}>
+                {account.name}
+              </option>
+            ))}
+          </Select>
+          {errors.toAccountId && <span className="text-xs text-expense">Selecione a conta de destino</span>}
+        </div>
+      </div>
+
+      <div className="flex flex-col gap-1.5">
+        <Label htmlFor="date">Data</Label>
+        <Input id="date" type="date" {...register("date")} />
+      </div>
+
+      <div className="flex flex-col gap-1.5">
+        <Label htmlFor="description">Descrição (opcional)</Label>
+        <Input id="description" placeholder="Ex: Guardando na caixinha" {...register("description")} />
+      </div>
+
+      <Button type="submit" disabled={isSubmitting}>
+        Transferir
+      </Button>
+    </form>
   );
 }
 

@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { BadRequestException, Injectable, NotFoundException } from "@nestjs/common";
 import type { Prisma } from "@prisma/client";
-import type { CreateTransactionInput, ListTransactionsQuery, UpdateTransactionInput } from "@gestao/shared";
+import type { CreateTransactionInput, CreateTransferInput, ListTransactionsQuery, UpdateTransactionInput } from "@gestao/shared";
 import { PrismaService } from "../common/prisma/prisma.service";
 
 @Injectable()
@@ -106,8 +106,44 @@ export class TransactionsService {
   }
 
   async remove(userId: string, id: string) {
-    await this.findOwnedOrThrow(userId, id);
+    const current = await this.findOwnedOrThrow(userId, id);
+
+    // Remove as duas pernas juntas — não faz sentido apagar só metade de uma transferência.
+    if (current.transferGroupId) {
+      await this.prisma.transaction.updateMany({
+        where: { userId, transferGroupId: current.transferGroupId, deletedAt: null },
+        data: { deletedAt: new Date() },
+      });
+      return;
+    }
+
     await this.prisma.transaction.update({ where: { id }, data: { deletedAt: new Date() } });
+  }
+
+  async createTransfer(userId: string, input: CreateTransferInput) {
+    if (input.fromAccountId === input.toAccountId) {
+      throw new BadRequestException("Conta de origem e destino devem ser diferentes");
+    }
+    await this.assertOwnedAccount(userId, input.fromAccountId);
+    await this.assertOwnedAccount(userId, input.toAccountId);
+
+    const transferGroupId = randomUUID();
+    const date = new Date(input.date);
+    const description = input.description || "Transferência";
+
+    await this.prisma.$transaction([
+      this.prisma.transaction.create({
+        data: { userId, accountId: input.fromAccountId, type: "EXPENSE", amount: input.amount, date, description, paid: true, transferGroupId },
+      }),
+      this.prisma.transaction.create({
+        data: { userId, accountId: input.toAccountId, type: "INCOME", amount: input.amount, date, description, paid: true, transferGroupId },
+      }),
+    ]);
+
+    return this.prisma.transaction.findMany({
+      where: { userId, transferGroupId },
+      include: { category: true, account: true },
+    });
   }
 
   private async findOwnedOrThrow(userId: string, id: string) {

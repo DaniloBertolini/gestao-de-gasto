@@ -12,8 +12,18 @@ export type { CreateAccountInput, UpdateAccountInput, PayInvoiceInput } from "./
 export { createCategorySchema, updateCategorySchema } from "./schemas/category";
 export type { CreateCategoryInput, UpdateCategoryInput } from "./schemas/category";
 
-export { createTransactionSchema, updateTransactionSchema, listTransactionsQuerySchema } from "./schemas/transaction";
-export type { CreateTransactionInput, UpdateTransactionInput, ListTransactionsQuery } from "./schemas/transaction";
+export {
+  createTransactionSchema,
+  updateTransactionSchema,
+  createTransferSchema,
+  listTransactionsQuerySchema,
+} from "./schemas/transaction";
+export type {
+  CreateTransactionInput,
+  UpdateTransactionInput,
+  CreateTransferInput,
+  ListTransactionsQuery,
+} from "./schemas/transaction";
 
 export { reportRangeQuerySchema, monthlySeriesQuerySchema } from "./schemas/report";
 export type { ReportRangeQuery, MonthlySeriesQuery } from "./schemas/report";
