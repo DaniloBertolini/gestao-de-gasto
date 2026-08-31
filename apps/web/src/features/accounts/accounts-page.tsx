@@ -1,7 +1,8 @@
 import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Pencil, Plus, Trash2 } from "lucide-react";
+import { format } from "date-fns";
+import { CreditCard, Pencil, Plus, Trash2 } from "lucide-react";
 import { createAccountSchema, formatBRL, type CreateAccountInput } from "@gestao/shared";
 import { Button } from "@/components/ui/button";
 import { useConfirm } from "@/components/confirm-provider";
@@ -10,9 +11,16 @@ import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
-import { cn } from "@/lib/utils";
+import { cn, transactionLabel } from "@/lib/utils";
 import type { Account } from "@/types/domain";
-import { useAccounts, useCreateAccount, useDeleteAccount, useUpdateAccount } from "./use-accounts";
+import {
+  useAccountInvoice,
+  useAccounts,
+  useCreateAccount,
+  useDeleteAccount,
+  usePayInvoice,
+  useUpdateAccount,
+} from "./use-accounts";
 
 const ACCOUNT_TYPE_LABELS: Record<string, string> = {
   CHECKING: "Conta corrente",
@@ -27,6 +35,7 @@ export function AccountsPage() {
 
   const [formOpen, setFormOpen] = useState(false);
   const [editingAccount, setEditingAccount] = useState<Account | null>(null);
+  const [invoiceAccount, setInvoiceAccount] = useState<Account | null>(null);
 
   function openCreate() {
     setEditingAccount(null);
@@ -56,6 +65,14 @@ export function AccountsPage() {
         </DialogContent>
       </Dialog>
 
+      <Dialog open={!!invoiceAccount} onOpenChange={(open) => !open && setInvoiceAccount(null)}>
+        {invoiceAccount && (
+          <DialogContent title={`Fatura — ${invoiceAccount.name}`} className="max-w-lg">
+            <InvoiceView account={invoiceAccount} onPaid={() => setInvoiceAccount(null)} />
+          </DialogContent>
+        )}
+      </Dialog>
+
       {accounts?.length === 0 && (
         <p className="rounded-lg border border-dashed border-line-strong py-12 text-center font-display text-base italic text-muted-foreground">
           Nenhuma conta cadastrada ainda.
@@ -65,7 +82,7 @@ export function AccountsPage() {
       <div className="grid gap-4 sm:grid-cols-2">
         {accounts?.map((account, i) => (
           <div key={account.id} className="animate-reveal" style={{ animationDelay: `${Math.min(i, 6) * 50}ms` }}>
-            <AccountCard account={account} onEdit={() => openEdit(account)} />
+            <AccountCard account={account} onEdit={() => openEdit(account)} onViewInvoice={() => setInvoiceAccount(account)} />
           </div>
         ))}
       </div>
@@ -73,7 +90,15 @@ export function AccountsPage() {
   );
 }
 
-function AccountCard({ account, onEdit }: { account: Account; onEdit: () => void }) {
+function AccountCard({
+  account,
+  onEdit,
+  onViewInvoice,
+}: {
+  account: Account;
+  onEdit: () => void;
+  onViewInvoice: () => void;
+}) {
   const deleteAccount = useDeleteAccount();
   const confirm = useConfirm();
 
@@ -86,6 +111,7 @@ function AccountCard({ account, onEdit }: { account: Account; onEdit: () => void
   }
 
   const negative = account.currentBalance < 0;
+  const isCreditCard = account.type === "CREDIT_CARD";
 
   return (
     <Card className="flex items-center justify-between">
@@ -95,6 +121,14 @@ function AccountCard({ account, onEdit }: { account: Account; onEdit: () => void
         <p className={cn("mt-2 font-mono text-xl font-medium tabular-nums", negative ? "text-expense" : "text-foreground")}>
           {formatBRL(account.currentBalance)}
         </p>
+        {isCreditCard && (
+          <button
+            onClick={onViewInvoice}
+            className="mt-2 flex items-center gap-1 text-xs font-medium text-primary underline decoration-accent decoration-2 underline-offset-2"
+          >
+            <CreditCard className="h-3 w-3" /> Ver fatura
+          </button>
+        )}
       </div>
       <div className="flex items-center gap-1">
         <Button variant="ghost" size="icon" onClick={onEdit}>
@@ -108,27 +142,132 @@ function AccountCard({ account, onEdit }: { account: Account; onEdit: () => void
   );
 }
 
+function InvoiceView({ account, onPaid }: { account: Account; onPaid: () => void }) {
+  const { data: invoice, isLoading } = useAccountInvoice(account.id);
+  const { data: accounts } = useAccounts();
+  const payInvoice = usePayInvoice(account.id);
+  const confirm = useConfirm();
+  const [payFromAccountId, setPayFromAccountId] = useState("");
+
+  const payableAccounts = accounts?.filter((a) => a.id !== account.id && a.type !== "CREDIT_CARD") ?? [];
+
+  if (!account.closingDay) {
+    return (
+      <p className="text-sm text-muted-foreground">
+        Defina o dia de fechamento dessa conta (editando-a) para acompanhar a fatura.
+      </p>
+    );
+  }
+
+  if (isLoading || !invoice) {
+    return <p className="text-sm text-muted-foreground">Carregando...</p>;
+  }
+
+  async function handlePay() {
+    if (!payFromAccountId) return;
+    const ok = await confirm({
+      title: "Pagar fatura?",
+      description: `Será criado um lançamento de ${formatBRL(invoice!.total)} na conta escolhida, e as compras dessa fatura serão marcadas como quitadas.`,
+      confirmLabel: "Pagar",
+    });
+    if (ok) {
+      await payInvoice.mutateAsync({ payFromAccountId });
+      onPaid();
+    }
+  }
+
+  return (
+    <div className="flex flex-col gap-4">
+      <div className="flex items-center justify-between rounded-md border border-line-strong bg-paper-alt/60 p-3 text-sm">
+        <div>
+          <p className="text-xs uppercase tracking-wider text-muted-foreground">Período</p>
+          <p className="font-medium text-foreground">
+            {format(new Date(invoice.periodStart), "dd/MM")} – {format(new Date(invoice.periodEnd), "dd/MM")}
+          </p>
+        </div>
+        <div className="text-right">
+          <p className="text-xs uppercase tracking-wider text-muted-foreground">Vencimento</p>
+          <p className="font-medium text-foreground">{format(new Date(invoice.dueDate), "dd/MM")}</p>
+        </div>
+      </div>
+
+      <div>
+        <p className="text-xs uppercase tracking-wider text-muted-foreground">Total da fatura</p>
+        <p className="font-display text-3xl font-medium tabular-nums text-foreground">{formatBRL(invoice.total)}</p>
+      </div>
+
+      <div className="max-h-56 divide-y divide-line overflow-y-auto rounded-md border border-line">
+        {invoice.transactions.length ? (
+          invoice.transactions.map((tx) => (
+            <div key={tx.id} className="flex items-center justify-between px-3 py-2 text-sm">
+              <div>
+                <p className="text-foreground">{transactionLabel(tx)}</p>
+                <p className="text-xs text-muted-foreground">
+                  {tx.category?.name ?? "Sem categoria"} · {format(new Date(tx.date), "dd/MM")}
+                </p>
+              </div>
+              <span className="font-mono text-sm tabular-nums text-expense">{formatBRL(tx.amount)}</span>
+            </div>
+          ))
+        ) : (
+          <p className="px-3 py-6 text-center text-sm text-muted-foreground">Nenhum gasto nessa fatura ainda.</p>
+        )}
+      </div>
+
+      {invoice.transactions.length > 0 && (
+        <div className="flex flex-col gap-2 border-t border-line pt-4">
+          <Label htmlFor="payFrom">Pagar com qual conta?</Label>
+          <Select id="payFrom" value={payFromAccountId} onChange={(e) => setPayFromAccountId(e.target.value)}>
+            <option value="">Selecione...</option>
+            {payableAccounts.map((a) => (
+              <option key={a.id} value={a.id}>
+                {a.name}
+              </option>
+            ))}
+          </Select>
+          <Button onClick={handlePay} disabled={!payFromAccountId || payInvoice.isPending}>
+            Pagar fatura
+          </Button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function AccountForm({ account, onDone }: { account?: Account; onDone: () => void }) {
   const createAccount = useCreateAccount();
   const updateAccount = useUpdateAccount();
   const {
     register,
     handleSubmit,
+    watch,
     formState: { isSubmitting },
   } = useForm<CreateAccountInput>({
     resolver: zodResolver(createAccountSchema),
     defaultValues: account
-      ? { name: account.name, type: account.type, initialBalance: account.initialBalance }
+      ? {
+          name: account.name,
+          type: account.type,
+          initialBalance: account.initialBalance,
+          closingDay: account.closingDay ?? undefined,
+          dueDay: account.dueDay ?? undefined,
+        }
       : { type: "CHECKING", initialBalance: 0 },
   });
 
+  const isCreditCard = watch("type") === "CREDIT_CARD";
+
   async function onSubmit(data: CreateAccountInput) {
-    if (account) {
-      await updateAccount.mutateAsync({ id: account.id, input: data });
-    } else {
-      await createAccount.mutateAsync(data);
+    try {
+      if (account) {
+        await updateAccount.mutateAsync({ id: account.id, input: data });
+      } else {
+        await createAccount.mutateAsync(data);
+      }
+      onDone();
+    } catch {
+      // toast de erro já é exibido globalmente (ver mutationCache em main.tsx)
     }
-    onDone();
   }
 
   return (
@@ -147,6 +286,18 @@ function AccountForm({ account, onDone }: { account?: Account; onDone: () => voi
           ))}
         </Select>
       </div>
+      {isCreditCard && (
+        <div className="grid grid-cols-2 gap-4">
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="closingDay">Dia de fechamento</Label>
+            <Input id="closingDay" type="number" min={1} max={31} placeholder="Ex: 25" {...register("closingDay")} />
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="dueDay">Dia de vencimento</Label>
+            <Input id="dueDay" type="number" min={1} max={31} placeholder="Ex: 5" {...register("dueDay")} />
+          </div>
+        </div>
+      )}
       <Button type="submit" disabled={isSubmitting}>
         {account ? "Salvar alterações" : "Criar conta"}
       </Button>

@@ -135,12 +135,16 @@ function CategoryForm({
   });
 
   async function onSubmit(data: CreateCategoryInput) {
-    if (category) {
-      await updateCategory.mutateAsync({ id: category.id, input: data });
-    } else {
-      await createCategory.mutateAsync({ ...data, kind });
+    try {
+      if (category) {
+        await updateCategory.mutateAsync({ id: category.id, input: data });
+      } else {
+        await createCategory.mutateAsync({ ...data, kind });
+      }
+      onDone();
+    } catch {
+      // toast de erro já é exibido globalmente (ver mutationCache em main.tsx)
     }
-    onDone();
   }
 
   return (

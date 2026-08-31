@@ -67,6 +67,9 @@ model Account {
   currency       String      @default("BRL")
   initialBalance Int         @default(0)
   color          String?
+  // Só usados quando type = CREDIT_CARD, para calcular o período da fatura.
+  closingDay     Int?
+  dueDay         Int?
   archivedAt     DateTime?
   deletedAt      DateTime?
   createdAt      DateTime    @default(now())
@@ -112,6 +115,19 @@ model Transaction {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
+  // Parcelamento: todas as parcelas de uma mesma compra compartilham installmentGroupId.
+  installmentGroupId String?
+  installmentNo      Int?
+  installmentTotal   Int?
+
+  // Marca o lançamento único gerado ao "pagar a fatura" de um cartão — é o que
+  // realmente sai do saldo (paid=true). As compras individuais do cartão nunca
+  // viram paid=true; ao serem quitadas, apenas ganham settledInPaymentId.
+  isCardPayment     Boolean      @default(false)
+  settledInPaymentId String?
+  settledInPayment   Transaction?  @relation("InvoiceSettlement", fields: [settledInPaymentId], references: [id])
+  settledPurchases   Transaction[] @relation("InvoiceSettlement")
+
   user     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   account  Account?  @relation(fields: [accountId], references: [id])
   category Category? @relation(fields: [categoryId], references: [id])
@@ -119,4 +135,5 @@ model Transaction {
   @@index([userId, date(sort: Desc)])
   @@index([userId, accountId, date])
   @@index([userId, categoryId, date])
+  @@index([accountId, paid, settledInPaymentId])
 }

@@ -8,6 +8,8 @@ export interface Account {
   initialBalance: number;
   currentBalance: number;
   color?: string | null;
+  closingDay?: number | null;
+  dueDay?: number | null;
   archivedAt?: string | null;
 }
 
@@ -31,8 +33,19 @@ export interface Transaction {
   description?: string | null;
   notes?: string | null;
   paid: boolean;
+  installmentNo?: number | null;
+  installmentTotal?: number | null;
+  isCardPayment?: boolean;
   account?: Account | null;
   category?: Category | null;
+}
+
+export interface Invoice {
+  periodStart: string;
+  periodEnd: string;
+  dueDate: string;
+  total: number;
+  transactions: Transaction[];
 }
 
 export interface PaginatedResult<T> {

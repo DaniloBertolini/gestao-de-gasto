@@ -6,8 +6,8 @@ export { toCents, formatBRL } from "./money";
 export { registerSchema, loginSchema, changePasswordSchema } from "./schemas/auth";
 export type { RegisterInput, LoginInput, ChangePasswordInput } from "./schemas/auth";
 
-export { createAccountSchema, updateAccountSchema } from "./schemas/account";
-export type { CreateAccountInput, UpdateAccountInput } from "./schemas/account";
+export { createAccountSchema, updateAccountSchema, payInvoiceSchema } from "./schemas/account";
+export type { CreateAccountInput, UpdateAccountInput, PayInvoiceInput } from "./schemas/account";
 
 export { createCategorySchema, updateCategorySchema } from "./schemas/category";
 export type { CreateCategoryInput, UpdateCategoryInput } from "./schemas/category";

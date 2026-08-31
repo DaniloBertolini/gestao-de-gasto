@@ -25,6 +25,8 @@ export function TransactionForm({ transaction, onDone }: { transaction?: Transac
     register,
     control,
     handleSubmit,
+    setValue,
+    watch,
     formState: { errors, isSubmitting },
   } = useForm<CreateTransactionInput>({
     resolver: zodResolver(createTransactionSchema),
@@ -48,6 +50,17 @@ export function TransactionForm({ transaction, onDone }: { transaction?: Transac
         },
   });
 
+  const selectedAccount = accounts?.find((a) => a.id === watch("accountId"));
+  const isCreditCard = selectedAccount?.type === "CREDIT_CARD";
+
+  function handleAccountChange(accountId: string) {
+    setValue("accountId", accountId);
+    if (!transaction) {
+      const account = accounts?.find((a) => a.id === accountId);
+      setValue("paid", account?.type !== "CREDIT_CARD");
+    }
+  }
+
   async function onSubmit(data: CreateTransactionInput) {
     const payload = {
       ...data,
@@ -57,12 +70,16 @@ export function TransactionForm({ transaction, onDone }: { transaction?: Transac
       description: data.description || undefined,
     };
 
-    if (transaction) {
-      await updateTransaction.mutateAsync({ id: transaction.id, input: payload });
-    } else {
-      await createTransaction.mutateAsync(payload);
+    try {
+      if (transaction) {
+        await updateTransaction.mutateAsync({ id: transaction.id, input: payload });
+      } else {
+        await createTransaction.mutateAsync(payload);
+      }
+      onDone();
+    } catch {
+      // toast de erro já é exibido globalmente (ver mutationCache em main.tsx)
     }
-    onDone();
   }
 
   return (
@@ -95,7 +112,7 @@ export function TransactionForm({ transaction, onDone }: { transaction?: Transac
         </div>
         <div className="flex flex-col gap-1.5">
           <Label htmlFor="accountId">Conta (opcional)</Label>
-          <Select id="accountId" {...register("accountId")}>
+          <Select id="accountId" value={watch("accountId") ?? ""} onChange={(e) => handleAccountChange(e.target.value)}>
             <option value="">Sem conta</option>
             {accounts?.map((account) => (
               <option key={account.id} value={account.id}>
@@ -103,6 +120,7 @@ export function TransactionForm({ transaction, onDone }: { transaction?: Transac
               </option>
             ))}
           </Select>
+          {errors.accountId && <span className="text-xs text-expense">{errors.accountId.message}</span>}
         </div>
       </div>
 
@@ -116,7 +134,40 @@ export function TransactionForm({ transaction, onDone }: { transaction?: Transac
             </option>
           ))}
         </Select>
+        {errors.categoryId && <span className="text-xs text-expense">{errors.categoryId.message}</span>}
       </div>
+
+      {type === "EXPENSE" && (
+        <label className="flex cursor-pointer items-start gap-2.5 rounded-md border border-line-strong p-3 text-sm">
+          <input type="checkbox" className="mt-0.5 h-4 w-4" {...register("paid")} />
+          <span>
+            <span className="block font-medium text-foreground">Já saiu do saldo</span>
+            <span className="block text-xs text-muted-foreground">
+              {isCreditCard
+                ? "Desmarcado: a compra entra nos relatórios por categoria, mas só vai afetar seu saldo quando você lançar o pagamento da fatura."
+                : "Desmarque para compras no cartão de crédito — elas contam na categoria certa, mas só saem do seu saldo quando a fatura for paga."}
+            </span>
+          </span>
+        </label>
+      )}
+
+      {type === "EXPENSE" && isCreditCard && !transaction && (
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor="installments">Parcelar em quantas vezes?</Label>
+          <Input
+            id="installments"
+            type="number"
+            min={1}
+            max={48}
+            placeholder="1"
+            {...register("installments", { valueAsNumber: true })}
+          />
+          <span className="text-xs text-muted-foreground">
+            Deixe em 1 (ou vazio) para compra à vista. Cada parcela cai numa fatura futura.
+          </span>
+          {errors.installments && <span className="text-xs text-expense">{errors.installments.message}</span>}
+        </div>
+      )}
 
       <Button type="submit" disabled={isSubmitting}>
         Salvar

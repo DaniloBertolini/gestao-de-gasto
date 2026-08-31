@@ -1,7 +1,7 @@
 import { Body, Controller, Delete, Get, Param, Patch, Post, Query } from "@nestjs/common";
 import { CurrentUser, type AuthenticatedUser } from "../common/decorators/current-user.decorator";
 import { AccountsService } from "./accounts.service";
-import { CreateAccountDto, UpdateAccountDto } from "./dto/account.dto";
+import { CreateAccountDto, PayInvoiceDto, UpdateAccountDto } from "./dto/account.dto";
 
 @Controller("accounts")
 export class AccountsController {
@@ -25,5 +25,15 @@ export class AccountsController {
   @Delete(":id")
   remove(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string, @Query("force") force?: string) {
     return this.accountsService.remove(user.id, id, force === "true");
+  }
+
+  @Get(":id/invoice")
+  getInvoice(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string) {
+    return this.accountsService.getInvoice(user.id, id);
+  }
+
+  @Post(":id/invoice/pay")
+  payInvoice(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string, @Body() dto: PayInvoiceDto) {
+    return this.accountsService.payInvoice(user.id, id, dto);
   }
 }

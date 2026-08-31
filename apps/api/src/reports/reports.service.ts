@@ -35,9 +35,14 @@ export class ReportsService {
     const start = new Date(from);
     const end = addDays(new Date(to), 1);
 
+    // Sem filtro de "paid": uma compra no cartão deve aparecer aqui na data da
+    // compra (visão por competência), mesmo antes da fatura ser paga. O saldo
+    // real (summary/monthlySeries/saldo de conta) continua olhando só paid=true.
+    // isCardPayment=false exclui o lançamento único gerado ao pagar a fatura,
+    // já que as compras que o compõem já entraram aqui individualmente.
     const grouped = await this.prisma.transaction.groupBy({
       by: ["categoryId"],
-      where: { userId, type, paid: true, deletedAt: null, date: { gte: start, lt: end } },
+      where: { userId, type, deletedAt: null, isCardPayment: false, date: { gte: start, lt: end } },
       _sum: { amount: true },
     });
 

@@ -1,15 +1,25 @@
 import { z } from "zod";
 import { TX_TYPES } from "../enums";
 
+// Selects de "sem conta"/"sem categoria" no front mandam "" em vez de omitir o
+// campo — trata como ausente antes de validar o formato de cuid.
+const optionalCuid = z.preprocess((v) => (v === "" ? undefined : v), z.string().cuid().optional());
+
 export const createTransactionSchema = z.object({
-  accountId: z.string().cuid().optional(),
-  categoryId: z.string().cuid().optional(),
+  accountId: optionalCuid,
+  categoryId: optionalCuid,
   type: z.enum(TX_TYPES),
   amount: z.number().int().positive(),
   date: z.string().date(), // YYYY-MM-DD
   description: z.string().max(140).optional(),
   notes: z.string().max(500).optional(),
   paid: z.boolean().default(true),
+  // Se >1, a compra é dividida em N lançamentos (um por fatura futura). Campo
+  // numérico vazio no formulário vira NaN via valueAsNumber — trata como ausente.
+  installments: z.preprocess(
+    (v) => (v === "" || (typeof v === "number" && Number.isNaN(v)) ? undefined : v),
+    z.number().int().min(1).max(48).optional(),
+  ),
 });
 export type CreateTransactionInput = z.infer<typeof createTransactionSchema>;
 

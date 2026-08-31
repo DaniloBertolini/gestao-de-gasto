@@ -7,6 +7,10 @@ export function cn(...inputs: ClassValue[]) {
 }
 
 /** Descrição pode ser omitida; nesse caso usa a categoria como rótulo principal. */
-export function transactionLabel(tx: Pick<Transaction, "description" | "category">) {
-  return tx.description || tx.category?.name || "Sem descrição";
+export function transactionLabel(tx: Pick<Transaction, "description" | "category" | "installmentNo" | "installmentTotal">) {
+  const base = tx.description || tx.category?.name || "Sem descrição";
+  if (tx.installmentNo && tx.installmentTotal && tx.installmentTotal > 1) {
+    return `${base} (${tx.installmentNo}/${tx.installmentTotal})`;
+  }
+  return base;
 }

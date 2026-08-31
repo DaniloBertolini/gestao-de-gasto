@@ -1,8 +1,8 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import type { CreateAccountInput, UpdateAccountInput } from "@gestao/shared";
+import type { CreateAccountInput, PayInvoiceInput, UpdateAccountInput } from "@gestao/shared";
 import { api } from "@/lib/api";
 import { qk } from "@/lib/query-keys";
-import type { Account } from "@/types/domain";
+import type { Account, Invoice } from "@/types/domain";
 
 export function useAccounts(includeArchived = false) {
   return useQuery({
@@ -33,5 +33,25 @@ export function useDeleteAccount() {
   return useMutation({
     mutationFn: (id: string) => api.delete(`/accounts/${id}`),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["accounts"] }),
+  });
+}
+
+export function useAccountInvoice(accountId: string | null) {
+  return useQuery({
+    queryKey: ["accounts", accountId, "invoice"],
+    queryFn: () => api.get<Invoice>(`/accounts/${accountId}/invoice`),
+    enabled: !!accountId,
+  });
+}
+
+export function usePayInvoice(accountId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (input: PayInvoiceInput) => api.post(`/accounts/${accountId}/invoice/pay`, input),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["accounts"] });
+      queryClient.invalidateQueries({ queryKey: ["transactions"] });
+      queryClient.invalidateQueries({ queryKey: ["reports"] });
+    },
   });
 }

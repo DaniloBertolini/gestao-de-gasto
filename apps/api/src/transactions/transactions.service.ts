@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { BadRequestException, Injectable, NotFoundException } from "@nestjs/common";
 import type { Prisma } from "@prisma/client";
 import type { CreateTransactionInput, ListTransactionsQuery, UpdateTransactionInput } from "@gestao/shared";
@@ -60,7 +61,34 @@ export class TransactionsService {
     if (input.accountId) await this.assertOwnedAccount(userId, input.accountId);
     if (input.categoryId) await this.assertOwnedCategory(userId, input.categoryId, input.type);
 
-    return this.prisma.transaction.create({ data: { ...input, date: new Date(input.date), userId } });
+    const { installments, ...rest } = input;
+    if (!installments || installments <= 1) {
+      return this.prisma.transaction.create({ data: { ...rest, date: new Date(input.date), userId } });
+    }
+
+    // Parcelamento: divide o valor em N lançamentos, um por fatura futura (mês a mês).
+    const installmentGroupId = randomUUID();
+    const base = Math.floor(rest.amount / installments);
+    const remainder = rest.amount - base * installments;
+    const baseDate = new Date(input.date);
+
+    await this.prisma.transaction.createMany({
+      data: Array.from({ length: installments }, (_, i) => ({
+        ...rest,
+        amount: base + (i === installments - 1 ? remainder : 0),
+        date: addMonths(baseDate, i),
+        userId,
+        installmentGroupId,
+        installmentNo: i + 1,
+        installmentTotal: installments,
+      })),
+    });
+
+    return this.prisma.transaction.findMany({
+      where: { userId, installmentGroupId },
+      orderBy: { installmentNo: "asc" },
+      include: { category: true, account: true },
+    });
   }
 
   async update(userId: string, id: string, input: UpdateTransactionInput) {
@@ -69,9 +97,11 @@ export class TransactionsService {
     if (input.accountId) await this.assertOwnedAccount(userId, input.accountId);
     if (input.categoryId) await this.assertOwnedCategory(userId, input.categoryId, input.type ?? current.type);
 
+    const { installments: _installments, ...rest } = input;
+
     return this.prisma.transaction.update({
       where: { id },
-      data: { ...input, ...(input.date ? { date: new Date(input.date) } : {}) },
+      data: { ...rest, ...(input.date ? { date: new Date(input.date) } : {}) },
     });
   }
 
@@ -104,5 +134,11 @@ export class TransactionsService {
 function addDays(date: Date, days: number): Date {
   const result = new Date(date);
   result.setDate(result.getDate() + days);
+  return result;
+}
+
+function addMonths(date: Date, months: number): Date {
+  const result = new Date(date);
+  result.setMonth(result.getMonth() + months);
   return result;
 }
