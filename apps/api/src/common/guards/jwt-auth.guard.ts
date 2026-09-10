@@ -9,7 +9,7 @@ import type { Env } from "../env";
 
 interface AccessTokenPayload {
   sub: string;
-  email: string;
+  login: string;
 }
 
 @Injectable()
@@ -36,7 +36,7 @@ export class JwtAuthGuard implements CanActivate {
         secret: this.configService.get("JWT_ACCESS_SECRET", { infer: true }),
         algorithms: ["HS256"],
       });
-      request.user = { id: payload.sub, email: payload.email };
+      request.user = { id: payload.sub, login: payload.login };
       return true;
     } catch {
       throw new UnauthorizedException("Token de acesso inválido ou expirado");

@@ -1,29 +1,35 @@
 import { endOfMonth, format, startOfMonth } from "date-fns";
 import { ptBR } from "date-fns/locale";
-import { ArrowDownRight, ArrowUpRight } from "lucide-react";
-import { Bar, BarChart, CartesianGrid, Cell, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import { ArrowDownRight, ArrowUpRight, TrendingDown, TrendingUp } from "lucide-react";
+import { Area, AreaChart, Bar, BarChart, CartesianGrid, Cell, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { formatBRL } from "@gestao/shared";
 import { Card, CardTitle } from "@/components/ui/card";
 import { useAuth } from "@/features/auth/auth-context";
 import { useAccounts } from "@/features/accounts/use-accounts";
-import { useTransactions } from "@/features/transactions/use-transactions";
 import { useCountUp } from "@/hooks/use-count-up";
-import { cn, formatDate, transactionLabel } from "@/lib/utils";
-import { useMonthlySeries, useReportByCategory, useReportSummary } from "./use-reports";
+import { cn, formatDate } from "@/lib/utils";
+import type { BalancePoint, BreakdownItem, CategoryTotal, MonthlyPoint } from "@/types/domain";
+import {
+  useBalanceHistory,
+  useCategoryAnomalies,
+  useMonthlySeries,
+  useReportByCategory,
+  useReportSummary,
+} from "./use-reports";
 
 const today = new Date();
 const from = format(startOfMonth(today), "yyyy-MM-dd");
 const to = format(endOfMonth(today), "yyyy-MM-dd");
 
-const axisTick = { fill: "hsl(var(--ink-faint))", fontSize: 11, fontFamily: "var(--font-mono)" };
-const tooltipStyle = {
-  background: "hsl(var(--card))",
-  border: "1px solid hsl(var(--line-strong))",
-  borderRadius: 6,
-  fontFamily: "var(--font-mono)",
-  fontSize: 12,
-  boxShadow: "3px 3px 0 hsl(var(--ink) / 0.12)",
+const ACCOUNT_TYPE_LABELS: Record<string, string> = {
+  CHECKING: "Conta corrente",
+  SAVINGS: "Poupança",
+  CASH: "Dinheiro",
+  CREDIT_CARD: "Cartão de crédito",
+  INVESTMENT: "Investimento",
 };
+
+const axisTick = { fill: "hsl(var(--ink-faint))", fontSize: 11, fontFamily: "var(--font-mono)" };
 
 export function DashboardPage() {
   const { user } = useAuth();
@@ -31,7 +37,8 @@ export function DashboardPage() {
   const { data: summary } = useReportSummary(from, to);
   const { data: series } = useMonthlySeries(6);
   const { data: byCategory } = useReportByCategory(from, to, "EXPENSE");
-  const { data: recent } = useTransactions({ page: 1, perPage: 8, sort: "-date" });
+  const { data: balanceHistory } = useBalanceHistory(12);
+  const { data: anomalies } = useCategoryAnomalies(3);
 
   const totalBalance = accounts?.reduce((sum, a) => sum + a.currentBalance, 0) ?? 0;
   const animatedBalance = useCountUp(totalBalance);
@@ -61,15 +68,121 @@ export function DashboardPage() {
         </div>
       </Card>
 
+      <Card className="animate-reveal [animation-delay:90ms]">
+        <CardTitle>Saldo por conta</CardTitle>
+        {accounts?.length ? (
+          <div className="mt-4 grid gap-3 sm:grid-cols-2">
+            {accounts.map((account) => (
+              <div
+                key={account.id}
+                className="flex items-center justify-between rounded-md border border-line px-3.5 py-3"
+              >
+                <div>
+                  <p className="text-sm font-medium text-foreground">{account.name}</p>
+                  <p className="text-[0.65rem] uppercase tracking-wider text-muted-foreground">
+                    {ACCOUNT_TYPE_LABELS[account.type] ?? account.type}
+                  </p>
+                </div>
+                <span
+                  className={cn(
+                    "font-mono text-sm font-medium tabular-nums",
+                    account.currentBalance < 0 ? "text-expense" : "text-foreground",
+                  )}
+                >
+                  {formatBRL(account.currentBalance)}
+                </span>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="mt-4 font-display text-base italic text-muted-foreground">Nenhuma conta cadastrada ainda.</p>
+        )}
+      </Card>
+
+      <Card className="animate-reveal [animation-delay:105ms]">
+        <CardTitle>Evolução do patrimônio — últimos 12 meses</CardTitle>
+        <p className="mt-1 text-xs text-muted-foreground">
+          Seu saldo total ao fim de cada mês, somando todas as contas.
+        </p>
+        <div className="mt-5 h-64">
+          <ResponsiveContainer width="100%" height="100%">
+            <AreaChart data={balanceHistory ?? []} margin={{ left: 8, right: 8 }}>
+              <defs>
+                <linearGradient id="balanceFill" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor="hsl(var(--primary))" stopOpacity={0.22} />
+                  <stop offset="100%" stopColor="hsl(var(--primary))" stopOpacity={0} />
+                </linearGradient>
+              </defs>
+              <CartesianGrid strokeDasharray="2 4" stroke="hsl(var(--line))" vertical={false} />
+              <XAxis dataKey="month" tickLine={false} axisLine={false} tick={axisTick} />
+              <YAxis tickLine={false} axisLine={false} tick={axisTick} tickFormatter={(v) => formatBRL(v)} width={92} />
+              <Tooltip cursor={{ stroke: "hsl(var(--line-strong))" }} content={<BalanceTooltip />} />
+              <Area
+                type="monotone"
+                dataKey="balance"
+                stroke="hsl(var(--primary))"
+                strokeWidth={2}
+                fill="url(#balanceFill)"
+                dot={{ r: 2.5, fill: "hsl(var(--primary))" }}
+                activeDot={{ r: 4 }}
+              />
+            </AreaChart>
+          </ResponsiveContainer>
+        </div>
+      </Card>
+
+      {!!anomalies?.length && (
+        <Card className="animate-reveal [animation-delay:110ms]">
+          <CardTitle>Fora do padrão neste mês</CardTitle>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Categorias comparadas com a sua média dos últimos 3 meses.
+          </p>
+          <div className="mt-4 divide-y divide-line">
+            {anomalies.map((item) => {
+              const isUp = item.diff > 0;
+              return (
+                <div key={item.categoryId ?? item.name} className="flex items-center justify-between gap-3 py-3">
+                  <div className="flex min-w-0 items-center gap-2.5">
+                    <span
+                      className="h-2.5 w-2.5 shrink-0 rounded-full"
+                      style={{ backgroundColor: item.color }}
+                    />
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-medium text-foreground">{item.name}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {formatBRL(item.current)} · média {formatBRL(item.average)}
+                      </p>
+                    </div>
+                  </div>
+                  <span
+                    className={cn(
+                      "flex shrink-0 items-center gap-1 font-mono text-sm font-medium tabular-nums",
+                      isUp ? "text-expense" : "text-income",
+                    )}
+                  >
+                    {isUp ? <TrendingUp className="h-3.5 w-3.5" /> : <TrendingDown className="h-3.5 w-3.5" />}
+                    {isUp ? "+" : "−"}
+                    {Math.abs(Math.round((item.deltaPct ?? 0) * 100))}%
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        </Card>
+      )}
+
       <Card className="animate-reveal [animation-delay:120ms]">
         <CardTitle>Receita × despesa — últimos 6 meses</CardTitle>
+        <p className="mt-1 text-xs text-muted-foreground">
+          Passe o mouse sobre uma barra para ver o que compõe o valor.
+        </p>
         <div className="mt-5 h-64">
           <ResponsiveContainer width="100%" height="100%">
             <BarChart data={series ?? []} barGap={4}>
               <CartesianGrid strokeDasharray="2 4" stroke="hsl(var(--line))" vertical={false} />
               <XAxis dataKey="month" tickLine={false} axisLine={false} tick={axisTick} />
               <YAxis tickLine={false} axisLine={false} tick={axisTick} tickFormatter={(v) => formatBRL(v)} width={92} />
-              <Tooltip formatter={(v: number) => formatBRL(v)} contentStyle={tooltipStyle} cursor={{ fill: "hsl(var(--paper-alt))" }} />
+              <Tooltip shared={false} cursor={{ fill: "hsl(var(--paper-alt))" }} content={<MonthlyTooltip />} />
               <Bar dataKey="income" name="Receita" fill="hsl(var(--income))" radius={[3, 3, 0, 0]} maxBarSize={28} />
               <Bar dataKey="expense" name="Despesa" fill="hsl(var(--expense))" radius={[3, 3, 0, 0]} maxBarSize={28} />
             </BarChart>
@@ -79,6 +192,9 @@ export function DashboardPage() {
 
       <Card className="animate-reveal [animation-delay:180ms]">
         <CardTitle>Despesas por categoria — este mês</CardTitle>
+        <p className="mt-1 text-xs text-muted-foreground">
+          Passe o mouse sobre uma barra para ver os lançamentos que formam o total.
+        </p>
         <div className="mt-5 h-64">
           <ResponsiveContainer width="100%" height="100%">
             <BarChart data={byCategory?.slice(0, 6) ?? []} layout="vertical" margin={{ left: 24 }}>
@@ -92,7 +208,7 @@ export function DashboardPage() {
                 tickLine={false}
                 axisLine={false}
               />
-              <Tooltip formatter={(v: number) => formatBRL(v)} contentStyle={tooltipStyle} cursor={{ fill: "hsl(var(--paper-alt))" }} />
+              <Tooltip cursor={{ fill: "hsl(var(--paper-alt))" }} content={<CategoryTooltip />} />
               <Bar dataKey="total" radius={[0, 3, 3, 0]} maxBarSize={20}>
                 {(byCategory ?? []).slice(0, 6).map((entry) => (
                   <Cell key={entry.categoryId ?? "none"} fill={entry.color} />
@@ -102,37 +218,110 @@ export function DashboardPage() {
           </ResponsiveContainer>
         </div>
       </Card>
+    </div>
+  );
+}
 
-      <Card className="animate-reveal [animation-delay:240ms] pb-2">
-        <CardTitle>Últimos lançamentos</CardTitle>
-        <div className="mt-3 divide-y divide-line">
-          {recent?.data.length ? (
-            recent.data.map((tx) => (
-              <div key={tx.id} className="flex items-center justify-between py-3">
-                <div>
-                  <p className="text-sm font-medium text-foreground">{transactionLabel(tx)}</p>
-                  <p className="text-xs text-muted-foreground">
-                    {tx.category?.name ?? "Sem categoria"} · {formatDate(tx.date, "dd/MM")}
-                  </p>
-                </div>
-                <span
-                  className={cn(
-                    "font-mono text-sm font-medium tabular-nums",
-                    tx.type === "INCOME" ? "text-income" : "text-expense",
-                  )}
-                >
-                  {tx.type === "INCOME" ? "+" : "−"}
-                  {formatBRL(tx.amount)}
-                </span>
-              </div>
-            ))
-          ) : (
-            <p className="py-8 text-center font-display text-base italic text-muted-foreground">
-              Nenhum lançamento ainda. Registre sua primeira receita ou despesa.
-            </p>
-          )}
-        </div>
-      </Card>
+/** Payload que o Recharts entrega para um tooltip customizado. */
+interface TooltipPayload<T> {
+  active?: boolean;
+  payload?: { dataKey?: string | number; payload: T }[];
+}
+
+function MonthlyTooltip({ active, payload }: TooltipPayload<MonthlyPoint>) {
+  const entry = payload?.[0];
+  if (!active || !entry) return null;
+
+  const isIncome = entry.dataKey === "income";
+  const point = entry.payload;
+  const items = isIncome ? point.incomeBreakdown : point.expenseBreakdown;
+  const total = isIncome ? point.income : point.expense;
+
+  return (
+    <TooltipShell
+      title={isIncome ? "Receitas" : "Despesas"}
+      subtitle={point.month}
+      total={total}
+      accent={isIncome ? "text-income" : "text-expense"}
+      items={items}
+    />
+  );
+}
+
+function BalanceTooltip({ active, payload }: TooltipPayload<BalancePoint>) {
+  const entry = payload?.[0];
+  if (!active || !entry) return null;
+
+  const point = entry.payload;
+  const grew = point.delta >= 0;
+
+  return (
+    <div className="rounded-md border border-line-strong bg-card p-3 shadow-[3px_3px_0_hsl(var(--ink)/0.12)]">
+      <p className="text-[0.65rem] uppercase tracking-wider text-muted-foreground">{point.month}</p>
+      <p className="mt-0.5 font-mono text-base font-medium tabular-nums text-foreground">{formatBRL(point.balance)}</p>
+      <p className={cn("mt-1 font-mono text-xs tabular-nums", grew ? "text-income" : "text-expense")}>
+        {grew ? "+" : "−"}
+        {formatBRL(Math.abs(point.delta))} no mês
+      </p>
+    </div>
+  );
+}
+
+function CategoryTooltip({ active, payload }: TooltipPayload<CategoryTotal>) {
+  const entry = payload?.[0];
+  if (!active || !entry) return null;
+
+  const category = entry.payload;
+  const hidden = category.itemCount - category.items.length;
+
+  return (
+    <TooltipShell
+      title={category.name}
+      subtitle={`${Math.round(category.pct * 100)}% das despesas do mês`}
+      total={category.total}
+      accent="text-expense"
+      items={category.items}
+      footer={hidden > 0 ? `+ ${hidden} lançamento${hidden > 1 ? "s" : ""}` : undefined}
+    />
+  );
+}
+
+function TooltipShell({
+  title,
+  subtitle,
+  total,
+  accent,
+  items,
+  footer,
+}: {
+  title: string;
+  subtitle?: string;
+  total: number;
+  accent: string;
+  items: BreakdownItem[];
+  footer?: string;
+}) {
+  return (
+    <div className="max-w-[16rem] rounded-md border border-line-strong bg-card p-3 shadow-[3px_3px_0_hsl(var(--ink)/0.12)]">
+      <p className="font-display text-sm font-semibold text-foreground">{title}</p>
+      {subtitle && <p className="text-[0.65rem] uppercase tracking-wider text-muted-foreground">{subtitle}</p>}
+      <p className={cn("mt-1 font-mono text-base font-medium tabular-nums", accent)}>{formatBRL(total)}</p>
+
+      {items.length > 0 && (
+        <ul className="mt-2 space-y-1 border-t border-line pt-2">
+          {items.map((item, i) => (
+            <li key={`${item.label}-${i}`} className="flex items-baseline justify-between gap-3 text-xs">
+              <span className="truncate text-muted-foreground">
+                {item.label}
+                {item.date && <span className="ml-1 text-ink-faint">{formatDate(item.date, "dd/MM")}</span>}
+              </span>
+              <span className="shrink-0 font-mono tabular-nums text-foreground">{formatBRL(item.amount)}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+
+      {footer && <p className="mt-1.5 text-[0.65rem] text-ink-faint">{footer}</p>}
     </div>
   );
 }

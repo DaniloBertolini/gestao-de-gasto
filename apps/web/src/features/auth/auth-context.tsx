@@ -4,7 +4,7 @@ import { api, setAccessToken } from "@/lib/api";
 
 interface User {
   id: string;
-  email: string;
+  login: string;
   name: string;
 }
 

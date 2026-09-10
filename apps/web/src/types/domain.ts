@@ -62,12 +62,21 @@ export interface ReportSummary {
   prevPeriodDelta: { income: number; expense: number; net: number };
 }
 
+/** Item que compõe uma barra do gráfico — usado nos tooltips detalhados. */
+export interface BreakdownItem {
+  label: string;
+  amount: number;
+  date?: string;
+}
+
 export interface CategoryTotal {
   categoryId: string | null;
   name: string;
   color: string;
   total: number;
   pct: number;
+  items: BreakdownItem[];
+  itemCount: number;
 }
 
 export interface MonthlyPoint {
@@ -75,4 +84,22 @@ export interface MonthlyPoint {
   income: number;
   expense: number;
   net: number;
+  incomeBreakdown: BreakdownItem[];
+  expenseBreakdown: BreakdownItem[];
+}
+
+export interface BalancePoint {
+  month: string;
+  balance: number;
+  delta: number;
+}
+
+export interface CategoryAnomaly {
+  categoryId: string | null;
+  name: string;
+  color: string;
+  current: number;
+  average: number;
+  diff: number;
+  deltaPct: number | null;
 }

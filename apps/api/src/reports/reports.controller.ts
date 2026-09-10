@@ -25,4 +25,14 @@ export class ReportsController {
   monthlySeries(@CurrentUser() user: AuthenticatedUser, @Query() query: MonthlySeriesQueryDto) {
     return this.reportsService.monthlySeries(user.id, query);
   }
+
+  @Get("balance-history")
+  balanceHistory(@CurrentUser() user: AuthenticatedUser, @Query() query: MonthlySeriesQueryDto) {
+    return this.reportsService.balanceHistory(user.id, query);
+  }
+
+  @Get("category-anomalies")
+  categoryAnomalies(@CurrentUser() user: AuthenticatedUser, @Query() query: MonthlySeriesQueryDto) {
+    return this.reportsService.categoryAnomalies(user.id, query);
+  }
 }

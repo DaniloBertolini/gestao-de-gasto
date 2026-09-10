@@ -39,9 +39,9 @@ export function RegisterPage() {
           {errors.name && <span className="text-xs text-expense">{errors.name.message}</span>}
         </div>
         <div className="flex flex-col gap-1.5">
-          <Label htmlFor="email">E-mail</Label>
-          <Input id="email" type="email" autoComplete="email" {...register("email")} />
-          {errors.email && <span className="text-xs text-expense">{errors.email.message}</span>}
+          <Label htmlFor="login">Login</Label>
+          <Input id="login" autoComplete="username" {...register("login")} />
+          {errors.login && <span className="text-xs text-expense">{errors.login.message}</span>}
         </div>
         <div className="flex flex-col gap-1.5">
           <Label htmlFor="password">Senha</Label>

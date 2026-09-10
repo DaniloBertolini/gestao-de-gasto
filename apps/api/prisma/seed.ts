@@ -28,12 +28,12 @@ const DEFAULT_CATEGORIES: { name: string; kind: "INCOME" | "EXPENSE"; icon: stri
 ];
 
 async function main() {
-  const email = "demo@gestao.local";
+  const login = "demo";
   const passwordHash = await argon2.hash("senha12345", ARGON2_OPTIONS);
   const user = await prisma.user.upsert({
-    where: { email },
+    where: { login },
     update: {},
-    create: { email, name: "Usuário Demo", passwordHash },
+    create: { login, name: "Usuário Demo", passwordHash },
   });
 
   for (const category of DEFAULT_CATEGORIES) {
@@ -50,7 +50,7 @@ async function main() {
     create: { userId: user.id, name: "Carteira", type: "CASH", initialBalance: 0 },
   });
 
-  console.log(`Seed concluído para ${email}`);
+  console.log(`Seed concluído para ${login}`);
 }
 
 main()

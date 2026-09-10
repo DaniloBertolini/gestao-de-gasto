@@ -14,7 +14,7 @@ const REFRESH_TOKEN_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 dias
 export interface AuthResult {
   accessToken: string;
   refreshToken: string;
-  user: { id: string; email: string; name: string };
+  user: { id: string; login: string; name: string };
 }
 
 @Injectable()
@@ -26,19 +26,19 @@ export class AuthService {
   ) {}
 
   async register(input: RegisterInput): Promise<AuthResult> {
-    const existing = await this.prisma.user.findUnique({ where: { email: input.email } });
-    if (existing) throw new ConflictException("E-mail já cadastrado");
+    const existing = await this.prisma.user.findUnique({ where: { login: input.login } });
+    if (existing) throw new ConflictException("Esse login já está em uso");
 
     const passwordHash = await argon2.hash(input.password, ARGON2_OPTIONS);
     const user = await this.prisma.user.create({
-      data: { email: input.email, name: input.name, passwordHash },
+      data: { login: input.login, name: input.name, passwordHash },
     });
 
-    return this.issueSession(user.id, user.email, user.name);
+    return this.issueSession(user.id, user.login, user.name);
   }
 
   async login(input: LoginInput): Promise<AuthResult> {
-    const user = await this.prisma.user.findUnique({ where: { email: input.email } });
+    const user = await this.prisma.user.findUnique({ where: { login: input.login } });
 
     // Timing constante: sempre roda argon2.verify, mesmo com usuário inexistente.
     const passwordHash = user?.passwordHash ?? (await argon2.hash(randomUUID(), ARGON2_OPTIONS));
@@ -46,7 +46,7 @@ export class AuthService {
 
     if (!user || !valid) throw new UnauthorizedException("Credenciais inválidas");
 
-    return this.issueSession(user.id, user.email, user.name);
+    return this.issueSession(user.id, user.login, user.name);
   }
 
   async refresh(plainToken: string | undefined): Promise<AuthResult> {
@@ -76,7 +76,7 @@ export class AuthService {
       data: { revokedAt: new Date() },
     });
 
-    return this.issueSession(user.id, user.email, user.name, stored.familyId);
+    return this.issueSession(user.id, user.login, user.name, stored.familyId);
   }
 
   async logout(plainToken: string | undefined): Promise<void> {
@@ -108,18 +108,18 @@ export class AuthService {
   async me(userId: string) {
     return this.prisma.user.findUniqueOrThrow({
       where: { id: userId },
-      select: { id: true, email: true, name: true, createdAt: true },
+      select: { id: true, login: true, name: true, createdAt: true },
     });
   }
 
   private async issueSession(
     userId: string,
-    email: string,
+    login: string,
     name: string,
     familyId: string = randomUUID(),
   ): Promise<AuthResult> {
     const accessToken = this.jwtService.sign(
-      { sub: userId, email },
+      { sub: userId, login },
       {
         secret: this.configService.get("JWT_ACCESS_SECRET", { infer: true }),
         expiresIn: ACCESS_TOKEN_TTL,
@@ -137,7 +137,7 @@ export class AuthService {
       },
     });
 
-    return { accessToken, refreshToken, user: { id: userId, email, name } };
+    return { accessToken, refreshToken, user: { id: userId, login, name } };
   }
 
   private hashToken(token: string): string {

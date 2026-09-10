@@ -34,9 +34,9 @@ export function LoginPage() {
     <AuthShell eyebrow="Bem-vindo de volta" title="Entrar" subtitle="Acesse seu livro-caixa pessoal.">
       <form onSubmit={handleSubmit(onSubmit)} className="flex flex-col gap-4">
         <div className="flex flex-col gap-1.5">
-          <Label htmlFor="email">E-mail</Label>
-          <Input id="email" type="email" autoComplete="email" {...register("email")} />
-          {errors.email && <span className="text-xs text-expense">{errors.email.message}</span>}
+          <Label htmlFor="login">Login</Label>
+          <Input id="login" autoComplete="username" {...register("login")} />
+          {errors.login && <span className="text-xs text-expense">{errors.login.message}</span>}
         </div>
         <div className="flex flex-col gap-1.5">
           <Label htmlFor="password">Senha</Label>
