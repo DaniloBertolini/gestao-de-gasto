@@ -8,7 +8,8 @@ import { useAuth } from "@/features/auth/auth-context";
 import { useAccounts } from "@/features/accounts/use-accounts";
 import { useCountUp } from "@/hooks/use-count-up";
 import { cn, formatDate } from "@/lib/utils";
-import type { BalancePoint, BreakdownItem, CategoryTotal, MonthlyPoint } from "@/types/domain";
+import type { Account, BalancePoint, BreakdownItem, CategoryTotal, MonthlyPoint } from "@/types/domain";
+import { useAccountFilter } from "./use-account-filter";
 import {
   useBalanceHistory,
   useCategoryAnomalies,
@@ -34,11 +35,15 @@ const axisTick = { fill: "hsl(var(--ink-faint))", fontSize: 11, fontFamily: "var
 export function DashboardPage() {
   const { user } = useAuth();
   const { data: accounts } = useAccounts();
+  const accountFilter = useAccountFilter(accounts);
+  const { selectedIds, noneVisible } = accountFilter;
+  const flowEnabled = !noneVisible;
+
   const { data: summary } = useReportSummary(from, to);
-  const { data: series } = useMonthlySeries(6);
-  const { data: byCategory } = useReportByCategory(from, to, "EXPENSE");
   const { data: balanceHistory } = useBalanceHistory(12);
-  const { data: anomalies } = useCategoryAnomalies(3);
+  const { data: series } = useMonthlySeries(6, selectedIds, flowEnabled);
+  const { data: byCategory } = useReportByCategory(from, to, "EXPENSE", selectedIds, flowEnabled);
+  const { data: anomalies } = useCategoryAnomalies(3, selectedIds, flowEnabled);
 
   const totalBalance = accounts?.reduce((sum, a) => sum + a.currentBalance, 0) ?? 0;
   const animatedBalance = useCountUp(totalBalance);
@@ -72,27 +77,34 @@ export function DashboardPage() {
         <CardTitle>Saldo por conta</CardTitle>
         {accounts?.length ? (
           <div className="mt-4 grid gap-3 sm:grid-cols-2">
-            {accounts.map((account) => (
-              <div
-                key={account.id}
-                className="flex items-center justify-between rounded-md border border-line px-3.5 py-3"
-              >
-                <div>
-                  <p className="text-sm font-medium text-foreground">{account.name}</p>
-                  <p className="text-[0.65rem] uppercase tracking-wider text-muted-foreground">
-                    {ACCOUNT_TYPE_LABELS[account.type] ?? account.type}
-                  </p>
-                </div>
-                <span
-                  className={cn(
-                    "font-mono text-sm font-medium tabular-nums",
-                    account.currentBalance < 0 ? "text-expense" : "text-foreground",
-                  )}
+            {accounts.map((account) => {
+              // Cartão não tem saldo próprio no modelo: o que importa é o
+              // quanto já foi gasto na fatura que ainda vai ser paga.
+              const isCard = account.type === "CREDIT_CARD" && account.closingDay;
+              const value = isCard ? (account.openInvoiceTotal ?? 0) : account.currentBalance;
+
+              return (
+                <div
+                  key={account.id}
+                  className="flex items-center justify-between gap-2 rounded-md border border-line px-3.5 py-3"
                 >
-                  {formatBRL(account.currentBalance)}
-                </span>
-              </div>
-            ))}
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-medium text-foreground">{account.name}</p>
+                    <p className="text-[0.65rem] uppercase tracking-wider text-muted-foreground">
+                      {isCard ? "Fatura em aberto" : (ACCOUNT_TYPE_LABELS[account.type] ?? account.type)}
+                    </p>
+                  </div>
+                  <span
+                    className={cn(
+                      "shrink-0 font-mono text-sm font-medium tabular-nums",
+                      isCard || value < 0 ? "text-expense" : "text-foreground",
+                    )}
+                  >
+                    {formatBRL(value)}
+                  </span>
+                </div>
+              );
+            })}
           </div>
         ) : (
           <p className="mt-4 font-display text-base italic text-muted-foreground">Nenhuma conta cadastrada ainda.</p>
@@ -131,8 +143,66 @@ export function DashboardPage() {
         </div>
       </Card>
 
+      <AccountFilterBar accounts={accounts} filter={accountFilter} />
+
+      <Card className="animate-reveal [animation-delay:120ms]">
+        <CardTitle>Receita × despesa — últimos 6 meses</CardTitle>
+        <p className="mt-1 text-xs text-muted-foreground">
+          Passe o mouse sobre uma barra para ver o que compõe o valor.
+        </p>
+        <div className="mt-5 h-64">
+          {noneVisible ? (
+            <EmptyChart />
+          ) : (
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={series ?? []} barGap={4}>
+                <CartesianGrid strokeDasharray="2 4" stroke="hsl(var(--line))" vertical={false} />
+                <XAxis dataKey="month" tickLine={false} axisLine={false} tick={axisTick} />
+                <YAxis tickLine={false} axisLine={false} tick={axisTick} tickFormatter={(v) => formatBRL(v)} width={92} />
+                <Tooltip shared={false} cursor={{ fill: "hsl(var(--paper-alt))" }} content={<MonthlyTooltip />} />
+                <Bar dataKey="income" name="Receita" fill="hsl(var(--income))" radius={[3, 3, 0, 0]} maxBarSize={28} />
+                <Bar dataKey="expense" name="Despesa" fill="hsl(var(--expense))" radius={[3, 3, 0, 0]} maxBarSize={28} />
+              </BarChart>
+            </ResponsiveContainer>
+          )}
+        </div>
+      </Card>
+
+      <Card className="animate-reveal [animation-delay:180ms]">
+        <CardTitle>Despesas por categoria — este mês</CardTitle>
+        <p className="mt-1 text-xs text-muted-foreground">
+          Passe o mouse sobre uma barra para ver os lançamentos que formam o total.
+        </p>
+        <div className="mt-5 h-64">
+          {noneVisible ? (
+            <EmptyChart />
+          ) : (
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={byCategory?.slice(0, 6) ?? []} layout="vertical" margin={{ left: 24 }}>
+                <CartesianGrid strokeDasharray="2 4" stroke="hsl(var(--line))" horizontal={false} />
+                <XAxis type="number" tickFormatter={(v) => formatBRL(v)} tick={axisTick} axisLine={false} />
+                <YAxis
+                  type="category"
+                  dataKey="name"
+                  width={112}
+                  tick={{ ...axisTick, fontFamily: "var(--font-body)", fontSize: 12, fill: "hsl(var(--foreground))" }}
+                  tickLine={false}
+                  axisLine={false}
+                />
+                <Tooltip cursor={{ fill: "hsl(var(--paper-alt))" }} content={<CategoryTooltip />} />
+                <Bar dataKey="total" radius={[0, 3, 3, 0]} maxBarSize={20}>
+                  {(byCategory ?? []).slice(0, 6).map((entry) => (
+                    <Cell key={entry.categoryId ?? "none"} fill={entry.color} />
+                  ))}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          )}
+        </div>
+      </Card>
+
       {!!anomalies?.length && (
-        <Card className="animate-reveal [animation-delay:110ms]">
+        <Card className="animate-reveal [animation-delay:210ms]">
           <CardTitle>Fora do padrão neste mês</CardTitle>
           <p className="mt-1 text-xs text-muted-foreground">
             Categorias comparadas com a sua média dos últimos 3 meses.
@@ -143,10 +213,7 @@ export function DashboardPage() {
               return (
                 <div key={item.categoryId ?? item.name} className="flex items-center justify-between gap-3 py-3">
                   <div className="flex min-w-0 items-center gap-2.5">
-                    <span
-                      className="h-2.5 w-2.5 shrink-0 rounded-full"
-                      style={{ backgroundColor: item.color }}
-                    />
+                    <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: item.color }} />
                     <div className="min-w-0">
                       <p className="truncate text-sm font-medium text-foreground">{item.name}</p>
                       <p className="text-xs text-muted-foreground">
@@ -170,54 +237,60 @@ export function DashboardPage() {
           </div>
         </Card>
       )}
+    </div>
+  );
+}
 
-      <Card className="animate-reveal [animation-delay:120ms]">
-        <CardTitle>Receita × despesa — últimos 6 meses</CardTitle>
-        <p className="mt-1 text-xs text-muted-foreground">
-          Passe o mouse sobre uma barra para ver o que compõe o valor.
-        </p>
-        <div className="mt-5 h-64">
-          <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={series ?? []} barGap={4}>
-              <CartesianGrid strokeDasharray="2 4" stroke="hsl(var(--line))" vertical={false} />
-              <XAxis dataKey="month" tickLine={false} axisLine={false} tick={axisTick} />
-              <YAxis tickLine={false} axisLine={false} tick={axisTick} tickFormatter={(v) => formatBRL(v)} width={92} />
-              <Tooltip shared={false} cursor={{ fill: "hsl(var(--paper-alt))" }} content={<MonthlyTooltip />} />
-              <Bar dataKey="income" name="Receita" fill="hsl(var(--income))" radius={[3, 3, 0, 0]} maxBarSize={28} />
-              <Bar dataKey="expense" name="Despesa" fill="hsl(var(--expense))" radius={[3, 3, 0, 0]} maxBarSize={28} />
-            </BarChart>
-          </ResponsiveContainer>
-        </div>
-      </Card>
+function EmptyChart() {
+  return (
+    <div className="flex h-full items-center justify-center">
+      <p className="font-display text-base italic text-muted-foreground">Selecione ao menos uma conta acima.</p>
+    </div>
+  );
+}
 
-      <Card className="animate-reveal [animation-delay:180ms]">
-        <CardTitle>Despesas por categoria — este mês</CardTitle>
-        <p className="mt-1 text-xs text-muted-foreground">
-          Passe o mouse sobre uma barra para ver os lançamentos que formam o total.
-        </p>
-        <div className="mt-5 h-64">
-          <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={byCategory?.slice(0, 6) ?? []} layout="vertical" margin={{ left: 24 }}>
-              <CartesianGrid strokeDasharray="2 4" stroke="hsl(var(--line))" horizontal={false} />
-              <XAxis type="number" tickFormatter={(v) => formatBRL(v)} tick={axisTick} axisLine={false} />
-              <YAxis
-                type="category"
-                dataKey="name"
-                width={112}
-                tick={{ ...axisTick, fontFamily: "var(--font-body)", fontSize: 12, fill: "hsl(var(--foreground))" }}
-                tickLine={false}
-                axisLine={false}
-              />
-              <Tooltip cursor={{ fill: "hsl(var(--paper-alt))" }} content={<CategoryTooltip />} />
-              <Bar dataKey="total" radius={[0, 3, 3, 0]} maxBarSize={20}>
-                {(byCategory ?? []).slice(0, 6).map((entry) => (
-                  <Cell key={entry.categoryId ?? "none"} fill={entry.color} />
-                ))}
-              </Bar>
-            </BarChart>
-          </ResponsiveContainer>
-        </div>
-      </Card>
+function AccountFilterBar({
+  accounts,
+  filter,
+}: {
+  accounts: Account[] | undefined;
+  filter: ReturnType<typeof useAccountFilter>;
+}) {
+  if (!accounts?.length) return null;
+
+  return (
+    <div className="animate-reveal [animation-delay:110ms] flex flex-wrap items-center gap-2 rounded-lg border border-dashed border-line-strong px-4 py-3">
+      <span className="mr-1 text-[0.65rem] font-semibold uppercase tracking-[0.15em] text-muted-foreground">
+        Contas nos gráficos abaixo
+      </span>
+      {accounts.map((account) => {
+        const active = filter.isVisible(account.id);
+        return (
+          <button
+            key={account.id}
+            type="button"
+            onClick={() => filter.toggle(account.id)}
+            aria-pressed={active}
+            className={cn(
+              "rounded-md border px-3 py-1 text-xs font-medium transition-colors",
+              active
+                ? "border-primary bg-primary text-primary-foreground"
+                : "border-line-strong bg-transparent text-muted-foreground line-through hover:bg-paper-alt",
+            )}
+          >
+            {account.name}
+          </button>
+        );
+      })}
+      {filter.isFiltered && (
+        <button
+          type="button"
+          onClick={filter.showAll}
+          className="ml-auto text-xs font-medium text-primary underline decoration-accent decoration-2 underline-offset-2"
+        >
+          Mostrar todas
+        </button>
+      )}
     </div>
   );
 }

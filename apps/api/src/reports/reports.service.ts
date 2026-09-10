@@ -1,9 +1,14 @@
 import { Injectable } from "@nestjs/common";
-import type { MonthlySeriesQuery, ReportRangeQuery } from "@gestao/shared";
+import type { CategoryReportQuery, FlowSeriesQuery, MonthlySeriesQuery, ReportRangeQuery } from "@gestao/shared";
 import { PrismaService } from "../common/prisma/prisma.service";
 
 /** Quantos itens detalhados cada tooltip mostra antes de agrupar o resto. */
 const BREAKDOWN_LIMIT = 6;
+
+/** Recorte opcional por conta, usado só nos relatórios de fluxo. */
+function accountFilter(accountId?: string[]) {
+  return accountId?.length ? { accountId: { in: accountId } } : {};
+}
 
 @Injectable()
 export class ReportsService {
@@ -34,7 +39,7 @@ export class ReportsService {
     };
   }
 
-  async byCategory(userId: string, { from, to }: ReportRangeQuery, type: "INCOME" | "EXPENSE") {
+  async byCategory(userId: string, { from, to, accountId }: CategoryReportQuery, type: "INCOME" | "EXPENSE") {
     const start = new Date(from);
     const end = addDays(new Date(to), 1);
 
@@ -46,7 +51,15 @@ export class ReportsService {
     // transferGroupId=null exclui transferências entre contas — não são
     // receita/despesa de verdade, só dinheiro mudando de lugar.
     const transactions = await this.prisma.transaction.findMany({
-      where: { userId, type, deletedAt: null, isCardPayment: false, transferGroupId: null, date: { gte: start, lt: end } },
+      where: {
+        userId,
+        type,
+        deletedAt: null,
+        isCardPayment: false,
+        transferGroupId: null,
+        date: { gte: start, lt: end },
+        ...accountFilter(accountId),
+      },
       select: {
         id: true,
         amount: true,
@@ -95,7 +108,7 @@ export class ReportsService {
       .sort((a, b) => b.total - a.total);
   }
 
-  async monthlySeries(userId: string, { months }: MonthlySeriesQuery) {
+  async monthlySeries(userId: string, { months, accountId }: FlowSeriesQuery) {
     const now = new Date();
     // Limites em UTC: as datas são armazenadas como data pura (meia-noite UTC),
     // então usar o fuso local do servidor jogaria lançamentos no mês errado.
@@ -109,6 +122,7 @@ export class ReportsService {
         deletedAt: null,
         transferGroupId: null,
         date: { gte: firstMonth, lt: afterLastMonth },
+        ...accountFilter(accountId),
       },
       select: { type: true, amount: true, category: { select: { name: true } }, date: true },
     });
@@ -212,7 +226,7 @@ export class ReportsService {
    * Compara o gasto de cada categoria no mês atual com a média dos meses
    * anteriores, destacando o que fugiu do padrão.
    */
-  async categoryAnomalies(userId: string, { months }: MonthlySeriesQuery) {
+  async categoryAnomalies(userId: string, { months, accountId }: FlowSeriesQuery) {
     const now = new Date();
     const currentMonthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
     const historyStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - months, 1));
@@ -226,6 +240,7 @@ export class ReportsService {
         isCardPayment: false,
         transferGroupId: null,
         date: { gte: historyStart, lt: nextMonthStart },
+        ...accountFilter(accountId),
       },
       select: { amount: true, date: true, categoryId: true, category: { select: { name: true, color: true } } },
     });

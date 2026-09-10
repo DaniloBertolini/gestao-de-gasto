@@ -1,7 +1,12 @@
 import { Controller, Get, Query } from "@nestjs/common";
 import { CurrentUser, type AuthenticatedUser } from "../common/decorators/current-user.decorator";
 import { ReportsService } from "./reports.service";
-import { MonthlySeriesQueryDto, ReportRangeQueryDto } from "./dto/report.dto";
+import {
+  CategoryReportQueryDto,
+  FlowSeriesQueryDto,
+  MonthlySeriesQueryDto,
+  ReportRangeQueryDto,
+} from "./dto/report.dto";
 
 @Controller("reports")
 export class ReportsController {
@@ -15,14 +20,14 @@ export class ReportsController {
   @Get("by-category")
   byCategory(
     @CurrentUser() user: AuthenticatedUser,
-    @Query() query: ReportRangeQueryDto,
+    @Query() query: CategoryReportQueryDto,
     @Query("type") type: "INCOME" | "EXPENSE" = "EXPENSE",
   ) {
     return this.reportsService.byCategory(user.id, query, type);
   }
 
   @Get("monthly-series")
-  monthlySeries(@CurrentUser() user: AuthenticatedUser, @Query() query: MonthlySeriesQueryDto) {
+  monthlySeries(@CurrentUser() user: AuthenticatedUser, @Query() query: FlowSeriesQueryDto) {
     return this.reportsService.monthlySeries(user.id, query);
   }
 
@@ -32,7 +37,7 @@ export class ReportsController {
   }
 
   @Get("category-anomalies")
-  categoryAnomalies(@CurrentUser() user: AuthenticatedUser, @Query() query: MonthlySeriesQueryDto) {
+  categoryAnomalies(@CurrentUser() user: AuthenticatedUser, @Query() query: FlowSeriesQueryDto) {
     return this.reportsService.categoryAnomalies(user.id, query);
   }
 }

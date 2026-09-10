@@ -11,6 +11,9 @@ export interface Account {
   closingDay?: number | null;
   dueDay?: number | null;
   archivedAt?: string | null;
+  /** Só em cartões com fechamento definido: total da fatura em aberto. */
+  openInvoiceTotal?: number | null;
+  openInvoiceDueDate?: string | null;
 }
 
 export interface Category {

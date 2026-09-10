@@ -25,5 +25,15 @@ export type {
   ListTransactionsQuery,
 } from "./schemas/transaction";
 
-export { reportRangeQuerySchema, monthlySeriesQuerySchema } from "./schemas/report";
-export type { ReportRangeQuery, MonthlySeriesQuery } from "./schemas/report";
+export {
+  reportRangeQuerySchema,
+  categoryReportQuerySchema,
+  monthlySeriesQuerySchema,
+  flowSeriesQuerySchema,
+} from "./schemas/report";
+export type {
+  ReportRangeQuery,
+  CategoryReportQuery,
+  MonthlySeriesQuery,
+  FlowSeriesQuery,
+} from "./schemas/report";

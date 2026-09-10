@@ -78,10 +78,14 @@ export function AccountsPage() {
         </p>
       )}
 
-      <div className="grid gap-4 sm:grid-cols-2">
+      <div className="grid items-stretch gap-4 sm:grid-cols-2">
         {accounts?.map((account, i) => (
           <div key={account.id} className="animate-reveal" style={{ animationDelay: `${Math.min(i, 6) * 50}ms` }}>
-            <AccountCard account={account} onEdit={() => openEdit(account)} onViewInvoice={() => setInvoiceAccount(account)} />
+            <AccountCard
+              account={account}
+              onEdit={() => openEdit(account)}
+              onViewInvoice={() => setInvoiceAccount(account)}
+            />
           </div>
         ))}
       </div>
@@ -113,30 +117,63 @@ function AccountCard({
   const isCreditCard = account.type === "CREDIT_CARD";
 
   return (
-    <Card className="flex items-center justify-between">
-      <div>
-        <p className="font-medium text-foreground">{account.name}</p>
-        <p className="text-xs uppercase tracking-wider text-muted-foreground">{ACCOUNT_TYPE_LABELS[account.type]}</p>
-        <p className={cn("mt-2 font-mono text-xl font-medium tabular-nums", negative ? "text-expense" : "text-foreground")}>
+    // h-full + flex-col: cards da mesma linha ficam com a mesma altura e o
+    // link da fatura ancora no rodapé, alinhado entre os cartões.
+    <Card className="flex h-full flex-col">
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          <p className="truncate font-medium text-foreground">{account.name}</p>
+          <p className="mt-0.5 text-[0.65rem] uppercase tracking-wider text-muted-foreground">
+            {ACCOUNT_TYPE_LABELS[account.type] ?? account.type}
+          </p>
+        </div>
+        <div className="-mr-2 -mt-2 flex shrink-0 items-center">
+          <Button variant="ghost" size="icon" onClick={onEdit} aria-label="Editar conta">
+            <Pencil className="h-4 w-4" />
+          </Button>
+          <Button variant="ghost" size="icon" onClick={handleDelete} aria-label="Excluir conta">
+            <Trash2 className="h-4 w-4" />
+          </Button>
+        </div>
+      </div>
+
+      {isCreditCard ? (
+        account.closingDay ? (
+          <div className="mt-3">
+            <p className="text-[0.65rem] uppercase tracking-wider text-muted-foreground">Fatura em aberto</p>
+            <p className="font-mono text-xl font-medium tabular-nums text-expense">
+              {formatBRL(account.openInvoiceTotal ?? 0)}
+            </p>
+            {account.openInvoiceDueDate && (
+              <p className="mt-0.5 text-xs text-muted-foreground">
+                vence {formatDate(account.openInvoiceDueDate, "dd/MM")}
+              </p>
+            )}
+          </div>
+        ) : (
+          <p className="mt-3 text-xs italic text-muted-foreground">
+            Defina o dia de fechamento para acompanhar a fatura.
+          </p>
+        )
+      ) : (
+        <p
+          className={cn(
+            "mt-3 font-mono text-xl font-medium tabular-nums",
+            negative ? "text-expense" : "text-foreground",
+          )}
+        >
           {formatBRL(account.currentBalance)}
         </p>
-        {isCreditCard && (
-          <button
-            onClick={onViewInvoice}
-            className="mt-2 flex items-center gap-1 text-xs font-medium text-primary underline decoration-accent decoration-2 underline-offset-2"
-          >
-            <CreditCard className="h-3 w-3" /> Ver fatura
-          </button>
-        )}
-      </div>
-      <div className="flex items-center gap-1">
-        <Button variant="ghost" size="icon" onClick={onEdit}>
-          <Pencil className="h-4 w-4" />
-        </Button>
-        <Button variant="ghost" size="icon" onClick={handleDelete}>
-          <Trash2 className="h-4 w-4" />
-        </Button>
-      </div>
+      )}
+
+      {isCreditCard && (
+        <button
+          onClick={onViewInvoice}
+          className="mt-auto flex w-fit items-center gap-1 pt-3 text-xs font-medium text-primary underline decoration-accent decoration-2 underline-offset-2"
+        >
+          <CreditCard className="h-3 w-3" /> Ver fatura
+        </button>
+      )}
     </Card>
   );
 }
