@@ -19,9 +19,22 @@ import { useCreateTransfer, useDeleteTransaction, useTransactions } from "./use-
 
 export function TransactionsPage() {
   const [page, setPage] = useState(1);
-  const { data, isLoading } = useTransactions({ page, perPage: 20, sort: "-date" });
+  const [accountId, setAccountId] = useState("");
+  const { data: accounts } = useAccounts();
+  const { data, isLoading } = useTransactions({
+    page,
+    perPage: 20,
+    sort: "-date",
+    ...(accountId ? { accountId } : {}),
+  });
   const deleteTransaction = useDeleteTransaction();
   const confirm = useConfirm();
+
+  function handleAccountFilter(nextAccountId: string) {
+    setAccountId(nextAccountId);
+    // Sem isso, filtrar estando na página 3 deixaria a lista vazia.
+    setPage(1);
+  }
 
   async function handleDelete(tx: Transaction) {
     const ok = await confirm({
@@ -76,11 +89,34 @@ export function TransactionsPage() {
         </DialogContent>
       </Dialog>
 
+      {!!accounts?.length && (
+        <div className="flex items-center gap-3 animate-reveal [animation-delay:40ms]">
+          <Label htmlFor="filterAccount" className="shrink-0">
+            Conta
+          </Label>
+          <Select
+            id="filterAccount"
+            value={accountId}
+            onChange={(e) => handleAccountFilter(e.target.value)}
+            className="max-w-xs"
+          >
+            <option value="">Todas as contas</option>
+            {accounts.map((account) => (
+              <option key={account.id} value={account.id}>
+                {account.name}
+              </option>
+            ))}
+          </Select>
+        </div>
+      )}
+
       {isLoading && <p className="text-sm text-muted-foreground">Carregando...</p>}
 
       {!isLoading && !data?.data.length && (
         <p className="rounded-lg border border-dashed border-line-strong py-12 text-center font-display text-base italic text-muted-foreground">
-          Nenhuma transação encontrada. Registre sua primeira receita ou despesa.
+          {accountId
+            ? "Nenhuma transação nessa conta."
+            : "Nenhuma transação encontrada. Registre sua primeira receita ou despesa."}
         </p>
       )}
 
