@@ -9,6 +9,4 @@ export const qk = {
   reportMonthlySeries: (months: number, accountIds?: string[]) =>
     ["reports", "monthly-series", months, accountIds ?? null] as const,
   reportBalanceHistory: (months: number) => ["reports", "balance-history", months] as const,
-  reportCategoryAnomalies: (months: number, accountIds?: string[]) =>
-    ["reports", "category-anomalies", months, accountIds ?? null] as const,
 };

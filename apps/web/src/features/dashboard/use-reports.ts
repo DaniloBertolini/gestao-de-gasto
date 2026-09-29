@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { qk } from "@/lib/query-keys";
-import type { BalancePoint, CategoryAnomaly, CategoryTotal, MonthlyPoint, ReportSummary } from "@/types/domain";
+import type { BalancePoint, CategoryTotal, MonthlyPoint, ReportSummary } from "@/types/domain";
 
 /** Lista vazia = sem recorte (todas as contas); evita mandar filtro à toa. */
 function accountParam(accountIds?: string[]) {
@@ -44,10 +44,3 @@ export function useBalanceHistory(months = 12) {
   });
 }
 
-export function useCategoryAnomalies(months = 3, accountIds?: string[], enabled = true) {
-  return useQuery({
-    queryKey: qk.reportCategoryAnomalies(months, accountIds),
-    queryFn: () => api.get<CategoryAnomaly[]>("/reports/category-anomalies", { months, ...accountParam(accountIds) }),
-    enabled,
-  });
-}

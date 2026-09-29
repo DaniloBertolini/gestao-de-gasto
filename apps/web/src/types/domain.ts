@@ -23,6 +23,8 @@ export interface Category {
   icon?: string | null;
   color?: string | null;
   parentId?: string | null;
+  /** Dinheiro que só passa pela conta: fica fora de receita/despesa. */
+  excludeFromReports?: boolean;
   children?: Category[];
 }
 
@@ -97,12 +99,3 @@ export interface BalancePoint {
   delta: number;
 }
 
-export interface CategoryAnomaly {
-  categoryId: string | null;
-  name: string;
-  color: string;
-  current: number;
-  average: number;
-  diff: number;
-  deltaPct: number | null;
-}

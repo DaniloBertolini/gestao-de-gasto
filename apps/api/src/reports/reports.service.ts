@@ -2,13 +2,19 @@ import { Injectable } from "@nestjs/common";
 import type { CategoryReportQuery, FlowSeriesQuery, MonthlySeriesQuery, ReportRangeQuery } from "@gestao/shared";
 import { PrismaService } from "../common/prisma/prisma.service";
 
-/** Quantos itens detalhados cada tooltip mostra antes de agrupar o resto. */
-const BREAKDOWN_LIMIT = 6;
-
 /** Recorte opcional por conta, usado só nos relatórios de fluxo. */
 function accountFilter(accountId?: string[]) {
   return accountId?.length ? { accountId: { in: accountId } } : {};
 }
+
+/**
+ * Tira de receita/despesa as categorias marcadas como "não contar" — dinheiro
+ * de terceiros que só passa pela conta. Lançamentos sem categoria continuam
+ * valendo, por isso o OR (um filtro de relação sozinho descartaria os nulos).
+ */
+const REPORTABLE_CATEGORY = {
+  OR: [{ categoryId: null }, { category: { excludeFromReports: false } }],
+};
 
 @Injectable()
 export class ReportsService {
@@ -59,6 +65,7 @@ export class ReportsService {
         transferGroupId: null,
         date: { gte: start, lt: end },
         ...accountFilter(accountId),
+        ...REPORTABLE_CATEGORY,
       },
       select: {
         id: true,
@@ -91,13 +98,12 @@ export class ReportsService {
 
       bucket.total += tx.amount;
       bucket.itemCount += 1;
-      if (bucket.items.length < BREAKDOWN_LIMIT) {
-        bucket.items.push({
-          label: tx.description || bucket.name,
-          amount: tx.amount,
-          date: toDateOnly(tx.date),
-        });
-      }
+      // Lista completa: o tooltip corta na exibição, mas o detalhe mostra tudo.
+      bucket.items.push({
+        label: tx.description || bucket.name,
+        amount: tx.amount,
+        date: toDateOnly(tx.date),
+      });
       buckets.set(key, bucket);
     }
 
@@ -123,6 +129,7 @@ export class ReportsService {
         transferGroupId: null,
         date: { gte: firstMonth, lt: afterLastMonth },
         ...accountFilter(accountId),
+        ...REPORTABLE_CATEGORY,
       },
       select: { type: true, amount: true, category: { select: { name: true } }, date: true },
     });
@@ -163,10 +170,13 @@ export class ReportsService {
       target.push({ label: name, amount });
     }
 
+    // Maiores primeiro, sem cortar: o tooltip limita na exibição e o detalhe
+    // mostra a lista inteira.
+    const byAmountDesc = (a: BreakdownItem, b: BreakdownItem) => b.amount - a.amount;
     for (const point of series) {
       point.net = point.income - point.expense;
-      point.incomeBreakdown = topItems(point.incomeBreakdown);
-      point.expenseBreakdown = topItems(point.expenseBreakdown);
+      point.incomeBreakdown.sort(byAmountDesc);
+      point.expenseBreakdown.sort(byAmountDesc);
     }
 
     return series;
@@ -222,74 +232,17 @@ export class ReportsService {
     });
   }
 
-  /**
-   * Compara o gasto de cada categoria no mês atual com a média dos meses
-   * anteriores, destacando o que fugiu do padrão.
-   */
-  async categoryAnomalies(userId: string, { months, accountId }: FlowSeriesQuery) {
-    const now = new Date();
-    const currentMonthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
-    const historyStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - months, 1));
-    const nextMonthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1));
-
-    const transactions = await this.prisma.transaction.findMany({
-      where: {
-        userId,
-        type: "EXPENSE",
-        deletedAt: null,
-        isCardPayment: false,
-        transferGroupId: null,
-        date: { gte: historyStart, lt: nextMonthStart },
-        ...accountFilter(accountId),
-      },
-      select: { amount: true, date: true, categoryId: true, category: { select: { name: true, color: true } } },
-    });
-
-    const stats = new Map<
-      string,
-      { categoryId: string | null; name: string; color: string; current: number; past: number }
-    >();
-
-    for (const tx of transactions) {
-      const key = tx.categoryId ?? "__none__";
-      const entry = stats.get(key) ?? {
-        categoryId: tx.categoryId,
-        name: tx.category?.name ?? "Sem categoria",
-        color: tx.category?.color ?? "#94a3b8",
-        current: 0,
-        past: 0,
-      };
-
-      if (tx.date >= currentMonthStart) entry.current += tx.amount;
-      else entry.past += tx.amount;
-
-      stats.set(key, entry);
-    }
-
-    return [...stats.values()]
-      .map((entry) => {
-        // Divide pela janela inteira: mês sem gasto na categoria conta como zero.
-        const average = Math.round(entry.past / months);
-        return {
-          categoryId: entry.categoryId,
-          name: entry.name,
-          color: entry.color,
-          current: entry.current,
-          average,
-          diff: entry.current - average,
-          deltaPct: average > 0 ? (entry.current - average) / average : null,
-        };
-      })
-      // Sem histórico não há "normal" para comparar; ignora variação irrelevante.
-      .filter((entry) => entry.average > 0 && Math.abs(entry.deltaPct ?? 0) >= 0.15)
-      .sort((a, b) => Math.abs(b.diff) - Math.abs(a.diff))
-      .slice(0, 5);
-  }
-
   private async totalsFor(userId: string, start: Date, end: Date) {
     const grouped = await this.prisma.transaction.groupBy({
       by: ["type"],
-      where: { userId, paid: true, deletedAt: null, transferGroupId: null, date: { gte: start, lt: end } },
+      where: {
+        userId,
+        paid: true,
+        deletedAt: null,
+        transferGroupId: null,
+        date: { gte: start, lt: end },
+        ...REPORTABLE_CATEGORY,
+      },
       _sum: { amount: true },
     });
 
@@ -304,16 +257,6 @@ export interface BreakdownItem {
   label: string;
   amount: number;
   date?: string;
-}
-
-/** Maiores itens primeiro; o excedente vira uma linha "Outros". */
-function topItems(items: BreakdownItem[]): BreakdownItem[] {
-  const sorted = [...items].sort((a, b) => b.amount - a.amount);
-  if (sorted.length <= BREAKDOWN_LIMIT) return sorted;
-
-  const top = sorted.slice(0, BREAKDOWN_LIMIT);
-  const rest = sorted.slice(BREAKDOWN_LIMIT).reduce((sum, item) => sum + item.amount, 0);
-  return [...top, { label: `Outros (${sorted.length - BREAKDOWN_LIMIT})`, amount: rest }];
 }
 
 function toDateOnly(date: Date): string {

@@ -69,12 +69,17 @@ export function CategoriesPage() {
       <ul className="divide-y divide-line rounded-lg border border-line-strong bg-card shadow-[3px_3px_0_hsl(var(--ink)/0.06)] animate-reveal [animation-delay:120ms]">
         {categories?.map((category) => (
           <li key={category.id} className="flex items-center justify-between px-4 py-3.5">
-            <div className="flex items-center gap-3 text-sm text-foreground">
+            <div className="flex min-w-0 items-center gap-3 text-sm text-foreground">
               <span
-                className="h-2.5 w-2.5 rounded-full"
+                className="h-2.5 w-2.5 shrink-0 rounded-full"
                 style={{ backgroundColor: category.color ?? "#94a3b8", boxShadow: `0 0 0 3px ${category.color ?? "#94a3b8"}22` }}
               />
-              {category.name}
+              <span className="truncate">{category.name}</span>
+              {category.excludeFromReports && (
+                <span className="shrink-0 rounded border border-line-strong px-1.5 py-0.5 text-[0.6rem] uppercase tracking-wider text-muted-foreground">
+                  fora dos relatórios
+                </span>
+              )}
             </div>
             <div className="flex items-center gap-1">
               <Button variant="ghost" size="icon" onClick={() => openEdit(category)}>
@@ -130,8 +135,13 @@ function CategoryForm({
   } = useForm<CreateCategoryInput>({
     resolver: zodResolver(createCategorySchema),
     defaultValues: category
-      ? { name: category.name, kind: category.kind, color: category.color ?? "#1b4d3a" }
-      : { kind, color: "#1b4d3a" },
+      ? {
+          name: category.name,
+          kind: category.kind,
+          color: category.color ?? "#1b4d3a",
+          excludeFromReports: category.excludeFromReports ?? false,
+        }
+      : { kind, color: "#1b4d3a", excludeFromReports: false },
   });
 
   async function onSubmit(data: CreateCategoryInput) {
@@ -157,6 +167,18 @@ function CategoryForm({
         <Label htmlFor="color">Cor</Label>
         <Input id="color" type="color" className="h-10 w-full cursor-pointer p-1" {...register("color")} />
       </div>
+
+      <label className="flex cursor-pointer items-start gap-2.5 rounded-md border border-line-strong p-3 text-sm">
+        <input type="checkbox" className="mt-0.5 h-4 w-4" {...register("excludeFromReports")} />
+        <span>
+          <span className="block font-medium text-foreground">Não contar nos relatórios</span>
+          <span className="block text-xs text-muted-foreground">
+            Para dinheiro que só passa pela sua conta e não é seu (ex: vaquinha que você repassa). Continua no saldo
+            e na lista de transações, mas fica fora de receita, despesa e dos gráficos.
+          </span>
+        </span>
+      </label>
+
       <Button type="submit" disabled={isSubmitting}>
         {category ? "Salvar alterações" : "Criar categoria"}
       </Button>

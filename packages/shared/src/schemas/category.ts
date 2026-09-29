@@ -7,6 +7,9 @@ export const createCategorySchema = z.object({
   icon: z.string().max(40).optional(),
   color: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional(),
   parentId: z.string().cuid().optional(),
+  // Dinheiro que passa pela conta mas não é seu (ex: vaquinha que você repassa).
+  // Continua no saldo, mas fica fora de receita/despesa nos relatórios.
+  excludeFromReports: z.boolean().default(false),
 });
 export type CreateCategoryInput = z.infer<typeof createCategorySchema>;
 

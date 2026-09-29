@@ -91,6 +91,10 @@ model Category {
   parentId  String?
   deletedAt DateTime?
 
+  // Dinheiro de terceiros que só passa pela conta: entra no saldo, mas fica
+  // fora dos totais de receita/despesa e dos gráficos.
+  excludeFromReports Boolean @default(false)
+
   parent       Category?     @relation("CatTree", fields: [parentId], references: [id])
   children     Category[]    @relation("CatTree")
   user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)

@@ -1,26 +1,25 @@
+import { useState } from "react";
 import { endOfMonth, format, startOfMonth } from "date-fns";
 import { ptBR } from "date-fns/locale";
-import { ArrowDownRight, ArrowUpRight, TrendingDown, TrendingUp } from "lucide-react";
+import { ArrowDownRight, ArrowUpRight } from "lucide-react";
 import { Area, AreaChart, Bar, BarChart, CartesianGrid, Cell, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { formatBRL } from "@gestao/shared";
 import { Card, CardTitle } from "@/components/ui/card";
+import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { useAuth } from "@/features/auth/auth-context";
 import { useAccounts } from "@/features/accounts/use-accounts";
 import { useCountUp } from "@/hooks/use-count-up";
 import { cn, formatDate } from "@/lib/utils";
 import type { Account, BalancePoint, BreakdownItem, CategoryTotal, MonthlyPoint } from "@/types/domain";
 import { useAccountFilter } from "./use-account-filter";
-import {
-  useBalanceHistory,
-  useCategoryAnomalies,
-  useMonthlySeries,
-  useReportByCategory,
-  useReportSummary,
-} from "./use-reports";
+import { useBalanceHistory, useMonthlySeries, useReportByCategory, useReportSummary } from "./use-reports";
 
 const today = new Date();
 const from = format(startOfMonth(today), "yyyy-MM-dd");
 const to = format(endOfMonth(today), "yyyy-MM-dd");
+
+/** Quantos itens cabem no tooltip; o resto aparece no detalhe, ao clicar. */
+const TOOLTIP_LIMIT = 6;
 
 const ACCOUNT_TYPE_LABELS: Record<string, string> = {
   CHECKING: "Conta corrente",
@@ -31,6 +30,15 @@ const ACCOUNT_TYPE_LABELS: Record<string, string> = {
 };
 
 const axisTick = { fill: "hsl(var(--ink-faint))", fontSize: 11, fontFamily: "var(--font-mono)" };
+
+/** Detalhe completo aberto ao clicar numa barra. */
+interface BarDetail {
+  title: string;
+  subtitle?: string;
+  total: number;
+  accent: string;
+  items: BreakdownItem[];
+}
 
 export function DashboardPage() {
   const { user } = useAuth();
@@ -43,15 +51,39 @@ export function DashboardPage() {
   const { data: balanceHistory } = useBalanceHistory(12);
   const { data: series } = useMonthlySeries(6, selectedIds, flowEnabled);
   const { data: byCategory } = useReportByCategory(from, to, "EXPENSE", selectedIds, flowEnabled);
-  const { data: anomalies } = useCategoryAnomalies(3, selectedIds, flowEnabled);
+
+  const [detail, setDetail] = useState<BarDetail | null>(null);
 
   const totalBalance = accounts?.reduce((sum, a) => sum + a.currentBalance, 0) ?? 0;
   const animatedBalance = useCountUp(totalBalance);
   const firstName = user?.name?.split(" ")[0];
 
+  function openMonthDetail(point: MonthlyPoint | undefined, type: "income" | "expense") {
+    if (!point) return;
+    const isIncome = type === "income";
+    setDetail({
+      title: isIncome ? "Receitas" : "Despesas",
+      subtitle: point.month,
+      total: isIncome ? point.income : point.expense,
+      accent: isIncome ? "text-income" : "text-expense",
+      items: isIncome ? point.incomeBreakdown : point.expenseBreakdown,
+    });
+  }
+
+  function openCategoryDetail(category: CategoryTotal | undefined) {
+    if (!category) return;
+    setDetail({
+      title: category.name,
+      subtitle: `${category.itemCount} lançamento${category.itemCount > 1 ? "s" : ""} neste mês`,
+      total: category.total,
+      accent: "text-expense",
+      items: category.items,
+    });
+  }
+
   return (
-    <div className="mx-auto max-w-5xl space-y-5 p-4 md:p-10">
-      <header className="mb-2 animate-reveal">
+    <div className="mx-auto max-w-7xl p-4 md:p-10">
+      <header className="mb-6 animate-reveal">
         <p className="text-xs font-semibold uppercase tracking-[0.2em] text-accent">
           {format(today, "EEEE, d 'de' MMMM", { locale: ptBR })}
         </p>
@@ -60,183 +92,226 @@ export function DashboardPage() {
         </h1>
       </header>
 
-      <Card className="animate-reveal [animation-delay:60ms]">
-        <CardTitle>Saldo total</CardTitle>
-        <p className="mt-1 font-display text-5xl font-medium tabular-nums text-foreground md:text-6xl">
-          {formatBRL(animatedBalance)}
-        </p>
-
-        <div className="mt-6 grid grid-cols-1 gap-5 border-t border-line pt-5 sm:grid-cols-3">
-          <MiniStat label="Receitas" value={summary?.income ?? 0} delta={summary?.prevPeriodDelta.income} positive />
-          <MiniStat label="Despesas" value={summary?.expense ?? 0} delta={summary?.prevPeriodDelta.expense} />
-          <MiniStat label="Saldo do mês" value={summary?.net ?? 0} delta={summary?.prevPeriodDelta.net} positive />
-        </div>
-      </Card>
-
-      <Card className="animate-reveal [animation-delay:90ms]">
-        <CardTitle>Saldo por conta</CardTitle>
-        {accounts?.length ? (
-          <div className="mt-4 grid gap-3 sm:grid-cols-2">
-            {accounts.map((account) => {
-              // Cartão não tem saldo próprio no modelo: o que importa é o
-              // quanto já foi gasto na fatura que ainda vai ser paga.
-              const isCard = account.type === "CREDIT_CARD" && account.closingDay;
-              const value = isCard ? (account.openInvoiceTotal ?? 0) : account.currentBalance;
-
-              return (
-                <div
-                  key={account.id}
-                  className="flex items-center justify-between gap-2 rounded-md border border-line px-3.5 py-3"
-                >
-                  <div className="min-w-0">
-                    <p className="truncate text-sm font-medium text-foreground">{account.name}</p>
-                    <p className="text-[0.65rem] uppercase tracking-wider text-muted-foreground">
-                      {isCard ? "Fatura em aberto" : (ACCOUNT_TYPE_LABELS[account.type] ?? account.type)}
-                    </p>
-                  </div>
-                  <span
-                    className={cn(
-                      "shrink-0 font-mono text-sm font-medium tabular-nums",
-                      isCard || value < 0 ? "text-expense" : "text-foreground",
-                    )}
-                  >
-                    {formatBRL(value)}
-                  </span>
-                </div>
-              );
-            })}
-          </div>
-        ) : (
-          <p className="mt-4 font-display text-base italic text-muted-foreground">Nenhuma conta cadastrada ainda.</p>
+      <Dialog open={!!detail} onOpenChange={(open) => !open && setDetail(null)}>
+        {detail && (
+          <DialogContent title={detail.title} className="max-w-lg">
+            <BarDetailView detail={detail} />
+          </DialogContent>
         )}
-      </Card>
+      </Dialog>
 
-      <Card className="animate-reveal [animation-delay:105ms]">
-        <CardTitle>Evolução do patrimônio — últimos 12 meses</CardTitle>
-        <p className="mt-1 text-xs text-muted-foreground">
-          Seu saldo total ao fim de cada mês, somando todas as contas.
-        </p>
-        <div className="mt-5 h-64">
-          <ResponsiveContainer width="100%" height="100%">
-            <AreaChart data={balanceHistory ?? []} margin={{ left: 8, right: 8 }}>
-              <defs>
-                <linearGradient id="balanceFill" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor="hsl(var(--primary))" stopOpacity={0.22} />
-                  <stop offset="100%" stopColor="hsl(var(--primary))" stopOpacity={0} />
-                </linearGradient>
-              </defs>
-              <CartesianGrid strokeDasharray="2 4" stroke="hsl(var(--line))" vertical={false} />
-              <XAxis dataKey="month" tickLine={false} axisLine={false} tick={axisTick} />
-              <YAxis tickLine={false} axisLine={false} tick={axisTick} tickFormatter={(v) => formatBRL(v)} width={92} />
-              <Tooltip cursor={{ stroke: "hsl(var(--line-strong))" }} content={<BalanceTooltip />} />
-              <Area
-                type="monotone"
-                dataKey="balance"
-                stroke="hsl(var(--primary))"
-                strokeWidth={2}
-                fill="url(#balanceFill)"
-                dot={{ r: 2.5, fill: "hsl(var(--primary))" }}
-                activeDot={{ r: 4 }}
-              />
-            </AreaChart>
-          </ResponsiveContainer>
-        </div>
-      </Card>
+      <div className="grid gap-5 lg:grid-cols-2">
+        <Card className="animate-reveal [animation-delay:60ms] lg:col-span-2">
+          <CardTitle>Saldo total</CardTitle>
+          <p className="mt-1 font-display text-5xl font-medium tabular-nums text-foreground md:text-6xl">
+            {formatBRL(animatedBalance)}
+          </p>
 
-      <AccountFilterBar accounts={accounts} filter={accountFilter} />
+          <div className="mt-6 grid grid-cols-1 gap-5 border-t border-line pt-5 sm:grid-cols-3">
+            <MiniStat label="Receitas" value={summary?.income ?? 0} delta={summary?.prevPeriodDelta.income} positive />
+            <MiniStat label="Despesas" value={summary?.expense ?? 0} delta={summary?.prevPeriodDelta.expense} />
+            <MiniStat label="Saldo do mês" value={summary?.net ?? 0} delta={summary?.prevPeriodDelta.net} positive />
+          </div>
+        </Card>
 
-      <Card className="animate-reveal [animation-delay:120ms]">
-        <CardTitle>Receita × despesa — últimos 6 meses</CardTitle>
-        <p className="mt-1 text-xs text-muted-foreground">
-          Passe o mouse sobre uma barra para ver o que compõe o valor.
-        </p>
-        <div className="mt-5 h-64">
-          {noneVisible ? (
-            <EmptyChart />
+        <Card className="animate-reveal [animation-delay:90ms]">
+          <CardTitle>Saldo por conta</CardTitle>
+          {accounts?.length ? (
+            <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2">
+              {accounts.map((account) => {
+                // Cartão não tem saldo próprio no modelo: o que importa é o
+                // quanto já foi gasto na fatura que ainda vai ser paga.
+                const isCard = account.type === "CREDIT_CARD" && account.closingDay;
+                const value = isCard ? (account.openInvoiceTotal ?? 0) : account.currentBalance;
+
+                return (
+                  <div
+                    key={account.id}
+                    className="flex items-center justify-between gap-2 rounded-md border border-line px-3.5 py-3"
+                  >
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-medium text-foreground">{account.name}</p>
+                      <p className="text-[0.65rem] uppercase tracking-wider text-muted-foreground">
+                        {isCard ? "Fatura em aberto" : (ACCOUNT_TYPE_LABELS[account.type] ?? account.type)}
+                      </p>
+                    </div>
+                    <span
+                      className={cn(
+                        "shrink-0 font-mono text-sm font-medium tabular-nums",
+                        isCard || value < 0 ? "text-expense" : "text-foreground",
+                      )}
+                    >
+                      {formatBRL(value)}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
           ) : (
+            <p className="mt-4 font-display text-base italic text-muted-foreground">Nenhuma conta cadastrada ainda.</p>
+          )}
+        </Card>
+
+        <Card className="animate-reveal [animation-delay:105ms]">
+          <CardTitle>Evolução do patrimônio — últimos 12 meses</CardTitle>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Seu saldo total ao fim de cada mês, somando todas as contas.
+          </p>
+          <div className="mt-5 h-64">
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={series ?? []} barGap={4}>
+              <AreaChart data={balanceHistory ?? []} margin={{ left: 8, right: 8 }}>
+                <defs>
+                  <linearGradient id="balanceFill" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="hsl(var(--primary))" stopOpacity={0.22} />
+                    <stop offset="100%" stopColor="hsl(var(--primary))" stopOpacity={0} />
+                  </linearGradient>
+                </defs>
                 <CartesianGrid strokeDasharray="2 4" stroke="hsl(var(--line))" vertical={false} />
                 <XAxis dataKey="month" tickLine={false} axisLine={false} tick={axisTick} />
                 <YAxis tickLine={false} axisLine={false} tick={axisTick} tickFormatter={(v) => formatBRL(v)} width={92} />
-                <Tooltip shared={false} cursor={{ fill: "hsl(var(--paper-alt))" }} content={<MonthlyTooltip />} />
-                <Bar dataKey="income" name="Receita" fill="hsl(var(--income))" radius={[3, 3, 0, 0]} maxBarSize={28} />
-                <Bar dataKey="expense" name="Despesa" fill="hsl(var(--expense))" radius={[3, 3, 0, 0]} maxBarSize={28} />
-              </BarChart>
-            </ResponsiveContainer>
-          )}
-        </div>
-      </Card>
-
-      <Card className="animate-reveal [animation-delay:180ms]">
-        <CardTitle>Despesas por categoria — este mês</CardTitle>
-        <p className="mt-1 text-xs text-muted-foreground">
-          Passe o mouse sobre uma barra para ver os lançamentos que formam o total.
-        </p>
-        <div className="mt-5 h-64">
-          {noneVisible ? (
-            <EmptyChart />
-          ) : (
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={byCategory?.slice(0, 6) ?? []} layout="vertical" margin={{ left: 24 }}>
-                <CartesianGrid strokeDasharray="2 4" stroke="hsl(var(--line))" horizontal={false} />
-                <XAxis type="number" tickFormatter={(v) => formatBRL(v)} tick={axisTick} axisLine={false} />
-                <YAxis
-                  type="category"
-                  dataKey="name"
-                  width={112}
-                  tick={{ ...axisTick, fontFamily: "var(--font-body)", fontSize: 12, fill: "hsl(var(--foreground))" }}
-                  tickLine={false}
-                  axisLine={false}
+                <Tooltip cursor={{ stroke: "hsl(var(--line-strong))" }} content={<BalanceTooltip />} />
+                <Area
+                  type="monotone"
+                  dataKey="balance"
+                  stroke="hsl(var(--primary))"
+                  strokeWidth={2}
+                  fill="url(#balanceFill)"
+                  dot={{ r: 2.5, fill: "hsl(var(--primary))" }}
+                  activeDot={{ r: 4 }}
                 />
-                <Tooltip cursor={{ fill: "hsl(var(--paper-alt))" }} content={<CategoryTooltip />} />
-                <Bar dataKey="total" radius={[0, 3, 3, 0]} maxBarSize={20}>
-                  {(byCategory ?? []).slice(0, 6).map((entry) => (
-                    <Cell key={entry.categoryId ?? "none"} fill={entry.color} />
-                  ))}
-                </Bar>
-              </BarChart>
+              </AreaChart>
             </ResponsiveContainer>
-          )}
-        </div>
-      </Card>
-
-      {!!anomalies?.length && (
-        <Card className="animate-reveal [animation-delay:210ms]">
-          <CardTitle>Fora do padrão neste mês</CardTitle>
-          <p className="mt-1 text-xs text-muted-foreground">
-            Categorias comparadas com a sua média dos últimos 3 meses.
-          </p>
-          <div className="mt-4 divide-y divide-line">
-            {anomalies.map((item) => {
-              const isUp = item.diff > 0;
-              return (
-                <div key={item.categoryId ?? item.name} className="flex items-center justify-between gap-3 py-3">
-                  <div className="flex min-w-0 items-center gap-2.5">
-                    <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: item.color }} />
-                    <div className="min-w-0">
-                      <p className="truncate text-sm font-medium text-foreground">{item.name}</p>
-                      <p className="text-xs text-muted-foreground">
-                        {formatBRL(item.current)} · média {formatBRL(item.average)}
-                      </p>
-                    </div>
-                  </div>
-                  <span
-                    className={cn(
-                      "flex shrink-0 items-center gap-1 font-mono text-sm font-medium tabular-nums",
-                      isUp ? "text-expense" : "text-income",
-                    )}
-                  >
-                    {isUp ? <TrendingUp className="h-3.5 w-3.5" /> : <TrendingDown className="h-3.5 w-3.5" />}
-                    {isUp ? "+" : "−"}
-                    {Math.abs(Math.round((item.deltaPct ?? 0) * 100))}%
-                  </span>
-                </div>
-              );
-            })}
           </div>
         </Card>
+
+        <div className="lg:col-span-2">
+          <AccountFilterBar accounts={accounts} filter={accountFilter} />
+        </div>
+
+        <Card className="animate-reveal [animation-delay:120ms]">
+          <CardTitle>Receita × despesa — últimos 6 meses</CardTitle>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Passe o mouse para ver o que compõe o valor; clique na barra para ver tudo.
+          </p>
+          <div className="mt-5 h-64">
+            {noneVisible ? (
+              <EmptyChart />
+            ) : (
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={series ?? []} barGap={4}>
+                  <CartesianGrid strokeDasharray="2 4" stroke="hsl(var(--line))" vertical={false} />
+                  <XAxis dataKey="month" tickLine={false} axisLine={false} tick={axisTick} />
+                  <YAxis tickLine={false} axisLine={false} tick={axisTick} tickFormatter={(v) => formatBRL(v)} width={92} />
+                  <Tooltip shared={false} cursor={{ fill: "hsl(var(--paper-alt))" }} content={<MonthlyTooltip />} />
+                  <Bar
+                    dataKey="income"
+                    name="Receita"
+                    fill="hsl(var(--income))"
+                    radius={[3, 3, 0, 0]}
+                    maxBarSize={28}
+                    className="cursor-pointer"
+                    onClick={(entry: { payload?: MonthlyPoint }) => openMonthDetail(entry?.payload, "income")}
+                  />
+                  <Bar
+                    dataKey="expense"
+                    name="Despesa"
+                    fill="hsl(var(--expense))"
+                    radius={[3, 3, 0, 0]}
+                    maxBarSize={28}
+                    className="cursor-pointer"
+                    onClick={(entry: { payload?: MonthlyPoint }) => openMonthDetail(entry?.payload, "expense")}
+                  />
+                </BarChart>
+              </ResponsiveContainer>
+            )}
+          </div>
+        </Card>
+
+        <Card className="animate-reveal [animation-delay:180ms]">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <CardTitle>Despesas por categoria — este mês</CardTitle>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Passe o mouse para ver os lançamentos; clique na barra para ver todos.
+              </p>
+            </div>
+            {!!byCategory?.length && (
+              <button
+                type="button"
+                onClick={() =>
+                  setDetail({
+                    title: "Todas as despesas do mês",
+                    subtitle: `${byCategory.length} categoria${byCategory.length > 1 ? "s" : ""}`,
+                    total: byCategory.reduce((sum, c) => sum + c.total, 0),
+                    accent: "text-expense",
+                    items: byCategory.map((c) => ({ label: c.name, amount: c.total })),
+                  })
+                }
+                className="shrink-0 text-xs font-medium text-primary underline decoration-accent decoration-2 underline-offset-2"
+              >
+                Ver todas
+              </button>
+            )}
+          </div>
+          <div className="mt-5 h-64">
+            {noneVisible ? (
+              <EmptyChart />
+            ) : (
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={byCategory?.slice(0, 6) ?? []} layout="vertical" margin={{ left: 24 }}>
+                  <CartesianGrid strokeDasharray="2 4" stroke="hsl(var(--line))" horizontal={false} />
+                  <XAxis type="number" tickFormatter={(v) => formatBRL(v)} tick={axisTick} axisLine={false} />
+                  <YAxis
+                    type="category"
+                    dataKey="name"
+                    width={112}
+                    tick={{ ...axisTick, fontFamily: "var(--font-body)", fontSize: 12, fill: "hsl(var(--foreground))" }}
+                    tickLine={false}
+                    axisLine={false}
+                  />
+                  <Tooltip cursor={{ fill: "hsl(var(--paper-alt))" }} content={<CategoryTooltip />} />
+                  <Bar
+                    dataKey="total"
+                    radius={[0, 3, 3, 0]}
+                    maxBarSize={20}
+                    className="cursor-pointer"
+                    onClick={(entry: { payload?: CategoryTotal }) => openCategoryDetail(entry?.payload)}
+                  >
+                    {(byCategory ?? []).slice(0, 6).map((entry) => (
+                      <Cell key={entry.categoryId ?? "none"} fill={entry.color} />
+                    ))}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            )}
+          </div>
+        </Card>
+      </div>
+    </div>
+  );
+}
+
+function BarDetailView({ detail }: { detail: BarDetail }) {
+  return (
+    <div>
+      {detail.subtitle && (
+        <p className="text-[0.65rem] uppercase tracking-wider text-muted-foreground">{detail.subtitle}</p>
       )}
+      <p className={cn("mt-0.5 font-display text-3xl font-medium tabular-nums", detail.accent)}>
+        {formatBRL(detail.total)}
+      </p>
+
+      <ul className="mt-4 max-h-[22rem] divide-y divide-line overflow-y-auto border-t border-line">
+        {detail.items.map((item, i) => (
+          <li key={`${item.label}-${i}`} className="flex items-baseline justify-between gap-3 py-2.5 text-sm">
+            <span className="min-w-0 text-foreground">
+              <span className="break-words">{item.label}</span>
+              {item.date && <span className="ml-2 text-xs text-muted-foreground">{formatDate(item.date, "dd/MM")}</span>}
+            </span>
+            <span className="shrink-0 font-mono tabular-nums text-foreground">{formatBRL(item.amount)}</span>
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }
@@ -345,7 +420,6 @@ function CategoryTooltip({ active, payload }: TooltipPayload<CategoryTotal>) {
   if (!active || !entry) return null;
 
   const category = entry.payload;
-  const hidden = category.itemCount - category.items.length;
 
   return (
     <TooltipShell
@@ -354,7 +428,6 @@ function CategoryTooltip({ active, payload }: TooltipPayload<CategoryTotal>) {
       total={category.total}
       accent="text-expense"
       items={category.items}
-      footer={hidden > 0 ? `+ ${hidden} lançamento${hidden > 1 ? "s" : ""}` : undefined}
     />
   );
 }
@@ -365,24 +438,25 @@ function TooltipShell({
   total,
   accent,
   items,
-  footer,
 }: {
   title: string;
   subtitle?: string;
   total: number;
   accent: string;
   items: BreakdownItem[];
-  footer?: string;
 }) {
+  const shown = items.slice(0, TOOLTIP_LIMIT);
+  const hidden = items.length - shown.length;
+
   return (
     <div className="max-w-[16rem] rounded-md border border-line-strong bg-card p-3 shadow-[3px_3px_0_hsl(var(--ink)/0.12)]">
       <p className="font-display text-sm font-semibold text-foreground">{title}</p>
       {subtitle && <p className="text-[0.65rem] uppercase tracking-wider text-muted-foreground">{subtitle}</p>}
       <p className={cn("mt-1 font-mono text-base font-medium tabular-nums", accent)}>{formatBRL(total)}</p>
 
-      {items.length > 0 && (
+      {shown.length > 0 && (
         <ul className="mt-2 space-y-1 border-t border-line pt-2">
-          {items.map((item, i) => (
+          {shown.map((item, i) => (
             <li key={`${item.label}-${i}`} className="flex items-baseline justify-between gap-3 text-xs">
               <span className="truncate text-muted-foreground">
                 {item.label}
@@ -394,7 +468,9 @@ function TooltipShell({
         </ul>
       )}
 
-      {footer && <p className="mt-1.5 text-[0.65rem] text-ink-faint">{footer}</p>}
+      {hidden > 0 && (
+        <p className="mt-1.5 text-[0.65rem] text-ink-faint">+ {hidden} — clique na barra para ver tudo</p>
+      )}
     </div>
   );
 }
